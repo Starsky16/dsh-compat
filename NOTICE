@@ -1,0 +1,10 @@
+NOTICE — upstream and third-party attributions
+===============================================
+
+dsh-compat injects CSS/JS and inspects metadata of plugins built for
+DeepSeek Harness (https://github.com/deepseek-ai/deepseek-harness, MIT).
+
+Design tokens referenced in css/opaque.css (--dsw-specific-menu,
+--dsw-menu-surface-fill) are defined by @deepseek-ai/dsh-client-ui-theme;
+overrides here restore documented token behaviour for portalled surfaces and
+do not alter upstream licensing.
