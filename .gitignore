@@ -2,3 +2,4 @@
 *.rej
 node_modules/
 tmp/
+.probe/
