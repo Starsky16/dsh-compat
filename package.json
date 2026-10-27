@@ -1,0 +1,23 @@
+{
+	"name": "dsh-compat",
+	"version": "0.1.0",
+	"description": "dsh 插件兼容层：L3 客户端垫片（polyfill + 全局 CSS）+ L4 安装门禁 doctor",
+	"type": "module",
+	"main": "lib/index.js",
+	"dsh": {
+		"client": {
+			"platform": "web",
+			"inject": []
+		}
+	},
+	"engines": {
+		"node": ">=24.2"
+	},
+	"bin": {
+		"dsh-compat-doctor": "bin/doctor.mjs"
+	},
+	"scripts": {
+		"doctor": "node bin/doctor.mjs"
+	},
+	"license": "MIT"
+}

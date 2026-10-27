@@ -1,0 +1,9 @@
+{
+	"_comment": "逃生口：已知问题插件的人工例外。键为包名；ignoreMissing = 静态扫描豁免的 specifier（含子路径或裸包名，'x/client' 形式按裸名归一）；expectedFail = true 表示整个 FAIL 降级为 KNOWN；note = 显示原因。这里只登记已人工核实的问题，不是自动降级路径。",
+	"plugins": {
+		"dsh-at-file": {
+			"ignoreMissing": ["@deepseek-ai/dsh-client-runtime/client"],
+			"note": "旧版宿主回退：require(dsh-client-store) 失败时才走 dsh-client-runtime/client（try/catch 包裹），现行 0.2.1-rc.3 命中 seed 词，不会触发"
+		}
+	}
+}
