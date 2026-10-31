@@ -1,0 +1,23 @@
+{
+	"schema": 1,
+	"generated": "2026-10-31",
+	"note": "L2 加载器隔离补丁清单。目标为 profile 树内的 @deepseek-ai/dsh-client-modules（dsh plugin add 拉进的 pristine 副本会遮蔽全局树）。pristine/patched 哈希任一不匹配即视为漂移，脚本拒绝半套应用。",
+	"base": {
+		"upstream": "0.2.1-rc.5",
+		"verified_against": ["0.2.1-rc.3", "0.2.1-rc.5"],
+		"note": "rc.3 与 rc.5 的 @deepseek-ai/dsh-client-modules/lib/client.js 字节一致（sha256 426084f8…，46292B），同一补丁与哈希可锚定两版；rc.4 及 rc.6+ 未验证，哈希不匹配即拒绝。"
+	},
+	"targets": [
+		{
+			"id": "client-modules-isolate",
+			"section": "compat",
+			"pkg": "@deepseek-ai/dsh-client-modules",
+			"rel": "lib/client.js",
+			"patch": "patches/compat/client-modules-isolate.patch",
+			"create": false,
+			"pristine_sha256": "426084f8672c26a469566a3f43c91a9b0d1dd73d0834028e553a6d0fa9cffa44",
+			"patched_sha256": "43ae3c1da305b207c53885cfbdc79b000940396bfb41615a346947dbd45233c2",
+			"effect": "makeRequire 未命中返回毒化代理（[dsh-compat] 归因，使用即抛）；start() 的 Promise.all 改逐条目 catch，失败条目从 loader 移除，避免 boot audit 连坐整页。"
+		}
+	]
+}

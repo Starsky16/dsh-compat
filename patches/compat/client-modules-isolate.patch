@@ -1,0 +1,71 @@
+--- a/lib/client.js
++++ b/lib/client.js
+@@ -98,6 +98,35 @@
+ 		function stripClientSuffix(spec) {
+ 			return spec.endsWith("/client") ? spec.slice(0, -7) : spec;
+ 		}
++		/** [dsh-compat] A poisoned stand-in for a require() that missed the module table: callers fail where the missing module is used, not while loading every sibling package. */
++		function compatMissingModule(spec) {
++			const error = new Error(`[dsh-compat] client-modules: require("${spec}") missed the module table — not a platform seed word, not a materialized module, and no registered package factory (a build-time externals drift, or a dynamic dependency that did not arrive)`);
++			error.code = "DSH_COMPAT_MISSING_MODULE";
++			error.specifier = spec;
++			const describe = () => `[dsh-compat] missing client module "${spec}"`;
++			return new Proxy(function () {
++				throw error;
++			}, {
++				get(_target, property) {
++					if (property === "then") return void 0;
++					if (property === "missingSpecifier") return spec;
++					if (property === "toString" || property === "valueOf" || property === "toJSON") return describe;
++					if (property === Symbol.toPrimitive) return describe;
++					if (property === Symbol.toStringTag) return "DshCompatMissingModule";
++					if (typeof property === "symbol") return void 0;
++					throw error;
++				},
++				apply() {
++					throw error;
++				},
++				construct() {
++					throw error;
++				},
++				has() {
++					return true;
++				}
++			});
++		}
+ 		/**
+ 		* Parse `window.__DSH_BOOT__` into the two consumer views. Wire boundary:
+ 		* a missing or malformed graph throws (the shell shows the loud failure —
+@@ -391,7 +420,22 @@
+ 				}, "client-modules: entry reconciliation");
+ 				return this.enqueue(async () => {
+ 					await Promise.all(this.desired.plugins.map(async ({ id }) => {
+-						await this.create(loader, id);
++						try {
++							await this.create(loader, id);
++						} catch (error) {
++							/* [dsh-compat] one plugin must not take the whole page down: keep the roster, drop the failed entry, and surface the cause. */
++							console.error(`[dsh-compat] plugin "${id}" did not load; isolating it`, error);
++							this.managed.delete(id);
++							this.revisions.delete(id);
++							for (const entry of loader.entries()) {
++								if (entry.options.name !== id || entry.fiber !== void 0) continue;
++								try {
++									loader.remove(entry.id);
++								} catch (removeError) {
++									console.error(`[dsh-compat] could not remove the failed entry "${id}"`, removeError);
++								}
++							}
++						}
+ 					}));
+ 					await loader.await();
+ 					for (const row of this.modules.manifest.modules) this.revisions.set(row.id, row.rev);
+@@ -837,7 +881,7 @@
+ 					const record = this.loadCache.get(id);
+ 					if (record !== void 0) return record.exports;
+ 					if (this.factories.has(id)) return this.materialize(id).exports;
+-					throw new Error(`client-modules: require("${spec}") missed the module table — not a platform seed word, not a materialized module, and no registered package factory (a build-time externals drift, or a dynamic dependency that did not arrive)`);
++					return compatMissingModule(spec);
+ 				};
+ 				require.async = async (spec) => {
+ 					edges.add(spec);
