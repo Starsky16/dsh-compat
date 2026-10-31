@@ -9,10 +9,10 @@ DeepSeek Harness 插件兼容层：**L3 客户端垫片** + **L4 安装门禁（
 | 组件 | 状态 | 说明 |
 |---|---|---|
 | L4 门禁 `bin/doctor.mjs` | ✅ 可用（2026-10-28） | WIN 实跑 desktop profile 全 PASS；fixture 矩阵全符合 |
-| T1 加载器勘察（spike） | ✅ 静态半场完成 | 报告 `docs/spike-loader-isolation.md`，两仓共用 |
+| T1 加载器勘察（spike） | ✅ 静态 + 动态半场完成 | 报告 `docs/spike-loader-isolation.md`（rc.3 静态 + Termux rc.5 真机） |
 | L3 垫片 `lib/index.js` + `css/` | ⬜ 未落地 | 文件尚未创建，**暂不要把本仓整包装进 profile**（见下方安装说明） |
 | T7 市场路径统一 | ⬜ 未开工 | 结论已改判：启动自检 + `doctor --fix` 为主兜底 |
-| Termux 动态半场验证 | ⏳ 已交底 | `workflow-sync` 仓 `handoff/20261031-dsh-compat-Termux动态半场测试.md` |
+| Termux 动态半场验证 | ✅ 2026-10-31 | 整页崩复现、doctor 矩阵符合（android→linux PASS）、注入顺序 push；交接见 `workflow-sync/handoff/20261031-dsh-compat-Termux动态半场测试.md` |
 
 > 平台边界：**WIN 只上 L3+L4**——dsh 核心在 `app.asar` 内不可写，L2 加载器补丁不适用。L2 属姊妹仓 [termux-dsh](https://github.com/Starsky16/termux-dsh)。
 
@@ -64,7 +64,7 @@ node bin/doctor.mjs test/fixtures/probe-profile
 # Termux 期望：dsh-os-linux PASS（android→linux 映射的关键断言）
 ```
 
-`test/fixtures/` 另有 `bad-plugin`（复现冷启动整页失败）与 `injector-plugin`（核对 `webserver/index-inject` 顺序），供真机动态验证使用，用法见交接文档。
+`test/fixtures/` 另有 `bad-plugin`（复现冷启动整页失败）与 `injector-plugin`（核对 `webserver/index-inject` 顺序），供真机动态验证使用，用法见交接文档。`bad-plugin` **必须带 `main` + `exports["."]` + 空 `apply()`**：client-modules 只扫描已激活的 entry，无主入口的包在 host 侧导不进、client 半区永不扫描，会得到假阴性（2026-10-31 Termux/rc.5 实测）。
 
 ## 仓库结构
 

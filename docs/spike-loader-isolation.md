@@ -1,6 +1,6 @@
 # Spike：加载器隔离与市场路径（Task 1）
 
-> 状态：**静态半场完成（WIN 侧 app.asar 证据），动态半场（真机 fixture 实跑）未做**。
+> 状态：**静态半场（WIN asar，rc.3）与动态半场（Termux 真机，rc.5-tdsh.3）均已完成**；动态结论与夹具修正见 §8。
 > 报告供 dsh-compat 与 termux-dsh 两个仓库共用；结论已按「证据 → 结论 → 影响」组织，未验证项显式标注。
 > 证据来源：只读解析 WIN 桌面端 `app.asar`（2026-10-28，版本 0.2.1-rc.3）中的
 > `@deepseek-ai/dsh-client-modules`（lib/client.js / lib/index.js）、`dsh-web-frontend`（dist/assets/index-BXV-oxvX.js）
@@ -90,13 +90,38 @@
    - 全部未命中 → FAIL（「externals 漂移」的静态预测，与 client.js 行 840 的运行时错误文案对应）。
    - **已知限定 ①**：扫描是正则级，动态拼串的 require 覆盖不到；**已知限定 ②**：try/catch 包裹的旧版回退 require（如 `dsh-at-file` 的 `require("@deepseek-ai/dsh-client-runtime/client")`，是 `dsh-client-store` 失败时的兼容回退）**静态无法区分保护性引用**——这正是 `compat/known.json` 逃生口的用武之地，首个真实条目已登记（dsh-at-file → KNOWN 并附归因说明）。
 
-## 8. 动态半场（待 Termux 真机 / WIN 隔离环境补测）
+## 8. 动态半场（2026-10-31 Termux 真机完成）
 
-- [ ] 造 `dsh-bad-plugin` fixture，隔离 `DSH_HOME` 启动，验证 §2 的「整页失败、日志归因」（预期：boot 卡片列出 bad-plugin id，页面不挂载；服务端日志含 `client-modules: require(...) missed the module table`）。
-- [ ] 用 L2 最小补丁（A + start 逐条目 catch）复验降级后页面可挂载、audit 行为（决定 B2 精确落点，见 §3）。
-- [ ] curl 首页对比注入顺序，固化 §5 推论。
-- [ ] Termux 上复测 §4 的 argv 形态（决定 wrapper 是否截得到市场 fallback）。
-- [ ] 成功 boot 后覆盖层消失机制（§2 末注）。
+真机环境：`dsh 0.2.1-rc.5-tdsh.3` / Node v24.22.1 / `process.platform = android`；完整过程与日志在
+`workflow-sync/handoff/20261031-dsh-compat-Termux动态半场测试.md`。三条核心结论全部得到证据：
+
+1. **冷启动连坐成立**：坏插件 client 侧 `require` 未命中 → 页面只剩 `Failed to load plugins` + 插件名 + 错误详情，应用 UI 完全不挂载；错误发生在浏览器侧，服务端日志 `missed the module table` 计数 0（与 §2 预判一致）。
+2. **doctor 平台判据正确**：`dsh-os-linux` 在 Termux **PASS**（`process.platform==="android"` → linux 映射生效；WIN 上同项 FAIL），`dsh-os-mismatch`（darwin）FAIL，bad-plugin FAIL，good-plugin PASS，nomanifest WARN，exit=1——逐项符合预期。
+3. **注入顺序是 push**：injector 的 style 落在 boot style **之后**，`table.push` 后写覆盖语义成立。
+
+### 关键修正：夹具必须 host 可激活（已修入仓库）
+
+`dsh-client-modules` 只扫描**已激活**的 loader entry（`lib/index.js:854-866`：要求 `entry.fiber !== void 0 && !entry.disabled`）。
+只有 `exports["./client"]`、**无主入口**的包会在 host 侧 ESM 导入报 `ERR_PACKAGE_PATH_NOT_EXPORTED`，entry 永不激活 ⇒ client 半区根本不被扫描 ⇒ 页面照常。
+
+这不是 rc.5 缺陷，而是**「host 侧失败已被 reconcile 逐条目 catch 隔离、client 侧未隔离」的分界证据**——再次确认 L2 只需补冷启动 client 路径（`start()`），host 侧无需改动。
+`test/fixtures/bad-plugin`（与 `probe-profile` 内同款）已补 `main` + `exports["."]` + 空 `apply()`，client 半区一字未改。
+
+### rc.5 环境前提（复跑动态测试必读）
+
+- `/tmp` 不可写 → 用 `$TMPDIR`。
+- **`pnpm` 未预装**：`dsh plugin add` 报 `pnpm was not found`，需先 `npm i -g pnpm`。
+- 非交互 shell `PREFIX` 为空 → 全局树用 `NM="$(npm root -g)/dsh-termux/node_modules"`。
+- 全新 profile 必须先 `dsh --profile <名> --from-default-profile web` 初始化。
+- **`dsh plugin add` 只写 `dependencies`，不会让插件进 loader**：要真正加载，必须手工在 profile 的 `cordis.patch.yml` 写 `- insert:` 块（单条 `- id: <name>` 会报 `entry not found`）。
+- `--dsw-specific-menu` 在 rc.5 已移入客户端 CSS 资源（`assets/index-*.css`），不在首页 HTML；顺序判据用「injector 在 boot style 之后」即与版本无关。
+
+### 尚未覆盖
+
+- L2 补丁落地后的降级复验（A + `start()` 逐条目 catch）——补丁尚未实现。
+- Termux 真实 profile 目前为空集，doctor 与 WIN 10 插件结果的对齐待其装插件后重跑。
+- §4 的 dshmarket argv 形态复测（Termux 未装市场）。
+- 成功 boot 后覆盖层消失机制（§2 末注）。
 
 ### doctor 已完成的 WIN 侧验证（2026-10-28）
 
