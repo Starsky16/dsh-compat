@@ -118,7 +118,7 @@
 
 ### 尚未覆盖
 
-- L2 补丁落地后的降级复验（A + `start()` 逐条目 catch）——补丁尚未实现。
+- L2 补丁落地后的降级复验——补丁已实现（`5c5ba65`：毒化代理 + `start()` 逐条目 catch），待 Termux 真机验，步骤见 `workflow-sync/handoff/20261031-dsh-compat-L2补丁真机复验.md`。
 - Termux 真实 profile 目前为空集，doctor 与 WIN 10 插件结果的对齐待其装插件后重跑。
 - §4 的 dshmarket argv 形态复测（Termux 未装市场）。
 - 成功 boot 后覆盖层消失机制（§2 末注）。
