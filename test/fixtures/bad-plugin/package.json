@@ -1,0 +1,8 @@
+{
+  "name": "dsh-bad-plugin",
+  "version": "0.0.1",
+  "description": "dsh-compat 测试 fixture：client 依赖 externals 漂移，用于复现冷启动整页失败",
+  "type": "module",
+  "exports": { "./client": "./lib/client.js" },
+  "dsh": { "client": { "platform": "web" } }
+}

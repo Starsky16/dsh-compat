@@ -1,0 +1,7 @@
+{
+  "name": "dsh-compat-injector",
+  "version": "0.0.1",
+  "description": "dsh-compat 测试 fixture：验证 webserver/index-inject 顺序（不 prepend 的 push 在主题之后）",
+  "type": "module",
+  "main": "lib/index.js"
+}

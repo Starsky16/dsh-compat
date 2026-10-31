@@ -1,0 +1,11 @@
+{
+  "name": "dsh-profile-probe",
+  "private": true,
+  "dependencies": {
+    "dsh-bad-plugin": "0.0.1",
+    "dsh-good-plugin": "0.0.2",
+    "dsh-os-mismatch": "0.0.3",
+    "dsh-os-linux": "0.0.4",
+    "dsh-nomanifest": "0.0.5"
+  }
+}

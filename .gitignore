@@ -3,3 +3,6 @@
 node_modules/
 tmp/
 .probe/
+
+# 测试 fixture 的 node_modules 需要入库（doctor 判据矩阵）
+!test/fixtures/probe-profile/node_modules/
