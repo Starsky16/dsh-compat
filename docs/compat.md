@@ -46,6 +46,6 @@
 ## 已知不覆盖 / 未解
 
 - **`/plugins/**` 的 curl 抓取**：三前缀 + A/B 对照均落 SPA 回退（404/HTML），与 L3 无关（对照实例同状）；浏览器请求特征不同，历史可抓到 client.js。人工浏览器复验未做。
-- **dshmarket 盲装路径**：`dshArgv()` spawn `node <cli>` 直调（shell:false），包装钩子罩不住；靠 L2 启动自检 + doctor `--fix` 兜底。argv 实形态待装市场后复测。
+- **dshmarket 安装路径**（2026-11-01 rc.5-tdsh.4 复核）：market 契约只产出 **pnpm spec**（`dsh-plugin-market/lib/typert.host.js` install.schema："Install spec accepted by `pnpm add`"；npm 源 `name@version` / git 源 `git+url#commit`），实际安装走 profile 目录的 `pnpm add`；rc.5 上未见 `dshArgv` 式 dsh CLI spawn（旧结论出自 rc.3 WIN asar 静态勘察，待复核）。⇒ 市场安装依赖 PATH 里有 pnpm；termux-dsh deb 的 `Depends` **不含 pnpm**，纯 deb 用户走市场会失败（缺口，记于 termux-dsh 侧）。
 - **上游版本漂移**：L2 补丁锚定 rc.3 / rc.5（`client.js` 字节一致）；rc.6+ 哈希不匹配即拒绝（`--allow-drift --force` 为显式逃生口）。T7 自检只在启动时告警，不自动重打。
 - **WIN 端 tgz 安装**：公开仓后匿名下载可用；WIN dsh CLI 载体（`dsh.cmd`）是否支持 `plugin add <tgz>` 未验证。
