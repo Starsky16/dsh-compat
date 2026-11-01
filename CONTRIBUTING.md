@@ -112,12 +112,14 @@ node bin/doctor.mjs test/fixtures/probe-profile
 
 ## 开发流程
 
+**分支约定**：`main` 是主分支（默认分支，GitHub 首页与文档链接都指向它，始终保持可用状态）；`dev` 是开发分支，日常提交与试验在这里做，验证通过后快进/合并到 `main`。Release 与 tag 以 `main` 为准。
+
 ```bash
 npm test        # 24 项：补丁应用器 / CLI / 自检 / L3 注入契约 / polyfill / 包声明
 node bin/doctor.mjs test/fixtures/probe-profile   # doctor 矩阵回归
 ```
 
-发版：bump `package.json` 版本（唯一同步点）→ push → dispatch `.github/workflows/release.yml`（`gh workflow run release.yml`）→ 核对 Release 资产与 sha256。版本习惯：兼容层小步走 `0.1.x`；dsh 上游大版本（rc.6+）出现时 L2 需重新勘察出新补丁版本。
+发版：在 `main` 上 bump `package.json` 版本（唯一同步点）→ push → dispatch `.github/workflows/release.yml`（`gh workflow run release.yml`，ref 用 `main`）→ 核对 Release 资产与 sha256。版本习惯：兼容层小步走 `0.1.x`；dsh 上游大版本（rc.6+）出现时 L2 需重新勘察出新补丁版本。
 
 ## 仓库结构
 
