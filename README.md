@@ -9,13 +9,13 @@ DeepSeek Harness 插件兼容层：**L2 加载器隔离补丁** + **L3 客户端
 | 组件 | 状态 | 说明 |
 |---|---|---|
 | L4 门禁 `bin/doctor.mjs` | ✅ 可用（2026-10-28） | WIN 实跑 desktop profile 全 PASS；fixture 矩阵全符合 |
-| L2 隔离补丁 `patches/compat/` + `bin/patch.mjs` | 🟡 已实现，待真机复验（2026-10-31） | 毒化代理 + `start()` 逐条目 catch；WIN 侧只做静态与逻辑验证，Termux 真机跑 fixture 回填后才算完成 |
+| L2 隔离补丁 `patches/compat/` + `bin/patch.mjs` | ✅ 真机验证（2026-10-31） | A 毒化代理 + `start()` 逐条目 catch + **B2（audit 前清 FAILED 条目）**；三态对照实测通过。Termux 打全局树（`--node-modules`），升级被覆盖由 T7 自检兜底 |
 | T1 加载器勘察（spike） | ✅ 静态 + 动态半场完成 | 报告 `docs/spike-loader-isolation.md`（rc.3 静态 + Termux rc.5 真机） |
 | L3 垫片 `lib/index.js` + `css/` | ⬜ 未落地 | 文件尚未创建，**暂不要把本仓整包装进 profile**（见下方安装说明） |
 | T7 市场路径统一 | ⬜ 未开工 | 结论已改判：启动自检 + `doctor --fix` 为主兜底 |
 | Termux 动态半场验证 | ✅ 2026-10-31 | 整页崩复现、doctor 矩阵符合（android→linux PASS）、注入顺序 push；交接见 `workflow-sync/handoff/20261031-dsh-compat-Termux动态半场测试.md` |
 
-> 平台边界：**WIN 只上 L3+L4**——dsh 核心在 `app.asar` 内不可写，L2 加载器补丁不适用。L2 补丁的**归属**按 2026-10-31 D8 结论归本仓（原「归 termux-dsh」是 D8 前旧口径）；补丁只作用于 Termux 侧 profile 树，真机复验走测试交接。
+> 平台边界：**WIN 只上 L3+L4**——dsh 核心在 `app.asar` 内不可写，L2 加载器补丁不适用。L2 补丁的**归属**按 2026-10-31 D8 结论归本仓（原「归 termux-dsh」是 D8 前旧口径）。**目标树已定**：Termux 打全局树（`--node-modules "$(npm root -g)/dsh-termux/node_modules"`）——实测全新 profile 不物化 `@deepseek-ai/*`，宿主直走全局树（见 `handoff/20261031-dsh-compat-L2补丁真机复验.md`）。
 
 ## 安装 / 使用
 
@@ -31,23 +31,32 @@ node ~/code/dsh-compat/bin/doctor.mjs            # 自动探测 $DSH_HOME/profil
 ## L2 加载器隔离补丁
 
 ```bash
-node bin/patch.mjs --check [--profile web]      # 只报告；未打或漂移时退出 1
-node bin/patch.mjs --apply [--profile web]      # 打补丁；有漂移整体拒绝（不半套）
-node bin/patch.mjs --revert [--profile web]     # 回滚为 pristine
+# Termux（生产）：打全局树——profile 里不物化 @deepseek-ai/*
+NM="$(npm root -g)/dsh-termux/node_modules"
+node bin/patch.mjs --check  --node-modules "$NM"
+node bin/patch.mjs --apply  --node-modules "$NM"
+node bin/patch.mjs --revert --node-modules "$NM"
+
+# profile 树（将来若某版本把 @deepseek-ai/* 装进 profile 才用得上）
+node bin/patch.mjs --check [--profile web]
 ```
 
-- 目标：`<profile>/node_modules/@deepseek-ai/dsh-client-modules/lib/client.js`（`dsh plugin add` 拉进的 pristine 副本会遮蔽全局树）。
+- 目标：`<node-modules>/@deepseek-ai/dsh-client-modules/lib/client.js`。`--node-modules` 直接给根；`--profile` 等价于 `<profile>/node_modules`，两者同给时以 `--node-modules` 为准。
+- Termux 实测：全新 profile 的 `node_modules/@deepseek-ai` 为空，宿主直走全局树；所以生产打全局树（`$(npm root -g)/dsh-termux/node_modules`）。代价是 **升级 dsh 后补丁被覆盖**，由 T7 的启动自检 sha256 表兜底（待落地）。
 - 清单：`patches/compat/manifest.json` 锁 `pristine_sha256` / `patched_sha256`；`rc.3` 与 `rc.5` 的该文件字节一致，同一补丁锚定两版，其他版本哈希不匹配即拒绝。
-- 补丁内容：`makeRequire` 未命中返回**毒化代理**（使用即抛，带 `[dsh-compat]` 与缺失 spec 的归因）；`start()` 的 `Promise.all` 改**逐条目 catch**，失败条目从 loader 移除并 `console.error`，避免 boot audit 连坐整页。
+- 补丁内容（A + 隔离 + B2）：
+  - `makeRequire` 未命中返回**毒化代理**（使用即抛，带 `[dsh-compat]` 与缺失 spec 的归因），不再击穿整个 `start()`；
+  - `start()` 的 `Promise.all` 改**逐条目 catch**，import 期失败就地移除并 `console.error`；
+  - **B2**：`await loader.await()` 之后、boot audit 之前，把 `fiber.state === FAILED` 且属于 `this.desired.plugins` 的条目 `loader.remove()`——毒化代理把失败从 import 期推迟到激活期，`create()` 不抛，单靠 catch 捕不到，必须靠 B2 清掉，否则 audit 仍整页崩。
 - 应用器由本仓 `bin/patch.mjs` 自己解析 unified diff，不依赖 `patch` / `git apply`（WIN 上 `git apply` 会按 `core.autocrlf` 把 LF 写成 CRLF）；写文件走临时文件 + rename，不写穿 pnpm 的硬链接。
-- **真机复验前不要视为完成**：WIN 只能验证静态与逻辑，Termux 上要拿坏 fixture 跑「页面照常挂载 + 其他插件可用 + `[dsh-compat]` 可归因」。
+- **真机结论（2026-10-31 Termux rc.5）**：pristine 整页崩 → L2 单独仍崩（`import failed: …` 变 `failed`）→ **L2 + B2 页面正常挂载**，插件页显示完整归因。三态对照见 `workflow-sync/handoff/20261031-dsh-compat-L2补丁真机复验.md`。
 
 ## 分层
 
 | 层 | 职责 | 归谁 |
 |---|---|---|
 | L1 平台层 | Android 宿主补丁（对任何插件生效） | [termux-dsh](https://github.com/Starsky16/termux-dsh) `patches/core/` |
-| L2 加载器层 | 单插件加载失败不连坐整页 | **本仓** `patches/compat/` + `bin/patch.mjs`（2026-10-31 D8 起；真机复验中） |
+| L2 加载器层 | 单插件加载失败不连坐整页 | **本仓** `patches/compat/` + `bin/patch.mjs`（2026-10-31 D8 起；真机已验证，Termux 打全局树） |
 | **L3 客户端垫片**（本仓） | polyfill + 全局 CSS（token 不透明、低功耗） | 本仓 `lib/index.js` + `css/`（待建） |
 | **L4 安装门禁**（本仓） | 声明与依赖可达性检查、可回滚 | 本仓 `bin/doctor.mjs` |
 

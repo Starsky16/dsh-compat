@@ -43,6 +43,8 @@
 **对 L2 的直接影响（送给 termux-dsh）**：变体 B（`materialize` catch 内降级导出）大概率不是最优解了——更小的补丁是**给 `start()` 的 `Promise.all` 换成逐条目 catch + 把失败条目标 managed-failed**，或给 `jZ`/`IZ` 的 audit 降级（把「未激活条目」从 throw 改成 warn）。**变体 A（毒化代理）仍保留**：`makeRequire` 未命中返回可归因代理，能让「缺依赖」的插件在 factory 内部就地炸成普通异常（随后被上面的隔离接住），而不是当场击穿整个 start。
 原 Task 2 的「变体 B + B2 跳过 degraded 条目」在真机上可以简化验证：先 A + start 逐条目 catch，跑 fixture 看页面是否照常挂载；audit throw 是否还拦（fixture 条目会以 fiber=undefined 出现在 audit 里）——**若 audit 仍 throw，则 B2 的落点从「跳过 degraded 包」改为「audit 容忍显式登记的降级条目」**。
 
+**2026-10-31 真机修正（Termux rc.5，三态对照）**：A 会让 `create()` 不抛（require 不再抛），失败被推迟到 fiber 激活期，`state = FAILED`；因此**只加 `start()` 的逐条目 catch 捕不到**，audit 仍 throw（文案从 `import failed: …` 变 `failed`，这本身就是代理已生效的证据）。正确落点是 **B2：在 `start()` 内 `await loader.await()` 之后、audit 之前，遍历 `loader.entries()` 把 `fiber.state === FAILED` 且属于 `this.desired.plugins` 的条目 `loader.remove()`**——不动前端 audit，改动面更小。三态实测（pristine 整页崩 / L2 单独仍崩 / L2+B2 正常挂载且插件页显示归因）见 `workflow-sync/handoff/20261031-dsh-compat-L2补丁真机复验.md`。
+
 ## 4. dshmarket 装插件走不走 `dsh plugin` CLI（决定 Task 7 形态）
 
 **结论：走 CLI，但走的是 `node <入口绝对路径>` 直调，不经过 shell 的 `dsh` 命令。**
@@ -118,7 +120,7 @@
 
 ### 尚未覆盖
 
-- L2 补丁落地后的降级复验——补丁已实现（`5c5ba65`：毒化代理 + `start()` 逐条目 catch），待 Termux 真机验，步骤见 `workflow-sync/handoff/20261031-dsh-compat-L2补丁真机复验.md`。
+- L2 补丁降级复验——**已完成**（2026-10-31 Termux rc.5，三态对照）：L2 单独不够，必须加 B2（`await loader.await()` 后、audit 前清 FAILED 条目）；补丁已含 B2，结论见 `workflow-sync/handoff/20261031-dsh-compat-L2补丁真机复验.md`。仍待拍板：Termux 补丁目标树（profile 树未物化 `@deepseek-ai/*`，见交接）。
 - Termux 真实 profile 目前为空集，doctor 与 WIN 10 插件结果的对齐待其装插件后重跑。
 - §4 的 dshmarket argv 形态复测（Termux 未装市场）。
 - 成功 boot 后覆盖层消失机制（§2 末注）。

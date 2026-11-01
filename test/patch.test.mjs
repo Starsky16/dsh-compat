@@ -183,3 +183,31 @@ test("CLI：未安装该包时 skip 且 check 退出 0", () => {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test("真实补丁含 B2：FAILED 条目在 audit 之前被清理", () => {
+	const patch = readFileSync(resolve(HERE, "..", "patches", "compat", "client-modules-isolate.patch"), "utf8");
+	const awaitIndex = patch.indexOf("await loader.await();");
+	const b2Index = patch.indexOf("entry.fiber.state !== FAILED");
+	assert.ok(awaitIndex >= 0, "补丁应包含 await loader.await()");
+	assert.ok(b2Index > awaitIndex, "B2 清理必须位于 await loader.await() 之后（激活完成才会变 FAILED）");
+	assert.match(patch, /failed to activate; isolating it/);
+	assert.match(patch, /this\.desired\.plugins\.some\(\(row\) => row\.id === failedName\)/, "B2 必须只清理 desired.plugins 内的条目");
+	assert.match(patch, /this\.managed\.delete\(failedName\)/);
+});
+
+test("CLI：--node-modules 直接指定 node_modules 根（Termux 全局树路径）", () => {
+	const fixture = makeFixture();
+	try {
+		const nodeModules = join(fixture.profile, "node_modules");
+		let result = run(["--check", "--manifest", fixture.manifest, "--node-modules", nodeModules]);
+		assert.equal(result.status, 1, "未打补丁时 check 应退出 1");
+		result = run(["--apply", "--manifest", fixture.manifest, "--node-modules", nodeModules]);
+		assert.equal(result.status, 0, result.stderr);
+		assert.equal(readFileSync(fixture.file, "utf8"), PATCHED);
+		result = run(["--revert", "--manifest", fixture.manifest, "--node-modules", nodeModules]);
+		assert.equal(result.status, 0, result.stderr);
+		assert.equal(readFileSync(fixture.file, "utf8"), PRISTINE);
+	} finally {
+		rmSync(fixture.root, { recursive: true, force: true });
+	}
+});

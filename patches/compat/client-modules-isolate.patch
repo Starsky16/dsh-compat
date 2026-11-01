@@ -36,7 +36,7 @@
  		/**
  		* Parse `window.__DSH_BOOT__` into the two consumer views. Wire boundary:
  		* a missing or malformed graph throws (the shell shows the loud failure —
-@@ -391,7 +420,22 @@
+@@ -391,9 +420,40 @@
  				}, "client-modules: entry reconciliation");
  				return this.enqueue(async () => {
  					await Promise.all(this.desired.plugins.map(async ({ id }) => {
@@ -59,8 +59,26 @@
 +						}
  					}));
  					await loader.await();
++					/* [dsh-compat] B2：毒化代理把失败从 import 期推迟到激活期，
++					 * create() 不抛 ⇒ 上面的 catch 捕不到 ⇒ fiber 变 FAILED。
++					 * 这里在 audit 之前清掉失败条目，否则 boot audit 仍 throw 整页崩。 */
++					for (const entry of loader.entries()) {
++						if (entry.fiber === void 0 || entry.fiber.state !== FAILED) continue;
++						const failedName = entry.options.name;
++						if (!this.desired.plugins.some((row) => row.id === failedName)) continue;
++						console.error(`[dsh-compat] plugin "${failedName}" failed to activate; isolating it`);
++						try {
++							loader.remove(entry.id);
++						} catch (removeError) {
++							console.error(`[dsh-compat] could not remove the failed entry "${failedName}"`, removeError);
++						}
++						this.managed.delete(failedName);
++						this.revisions.delete(failedName);
++					}
  					for (const row of this.modules.manifest.modules) this.revisions.set(row.id, row.rev);
-@@ -837,7 +881,7 @@
+ 				});
+ 			}
+@@ -837,7 +897,7 @@
  					const record = this.loadCache.get(id);
  					if (record !== void 0) return record.exports;
  					if (this.factories.has(id)) return this.materialize(id).exports;

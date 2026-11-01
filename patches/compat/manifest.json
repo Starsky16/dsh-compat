@@ -1,7 +1,7 @@
 {
 	"schema": 1,
 	"generated": "2026-10-31",
-	"note": "L2 加载器隔离补丁清单。目标为 profile 树内的 @deepseek-ai/dsh-client-modules（dsh plugin add 拉进的 pristine 副本会遮蔽全局树）。pristine/patched 哈希任一不匹配即视为漂移，脚本拒绝半套应用。",
+	"note": "L2 加载器隔离补丁清单。Termux 生产目标是全局树 $(npm root -g)/dsh-termux/node_modules（用 --node-modules 指定）；profile 树副本若存在也可用 --profile。pristine/patched 哈希任一不匹配即视为漂移，脚本拒绝半套应用。",
 	"base": {
 		"upstream": "0.2.1-rc.5",
 		"verified_against": ["0.2.1-rc.3", "0.2.1-rc.5"],
@@ -16,8 +16,8 @@
 			"patch": "patches/compat/client-modules-isolate.patch",
 			"create": false,
 			"pristine_sha256": "426084f8672c26a469566a3f43c91a9b0d1dd73d0834028e553a6d0fa9cffa44",
-			"patched_sha256": "43ae3c1da305b207c53885cfbdc79b000940396bfb41615a346947dbd45233c2",
-			"effect": "makeRequire 未命中返回毒化代理（[dsh-compat] 归因，使用即抛）；start() 的 Promise.all 改逐条目 catch，失败条目从 loader 移除，避免 boot audit 连坐整页。"
+			"patched_sha256": "21fab6c5ea5f1a2718f6585d467f45f97a9d0dba4e8db605cb4f9c4f6cb536c8",
+			"effect": "A：makeRequire 未命中返回毒化代理（[dsh-compat] 归因，使用即抛）。start() 的 Promise.all 改逐条目 catch。B2：await loader.await() 后、boot audit 前清理 fiber.state===FAILED 的条目——毒化代理把失败从 import 期推迟到激活期，create() 不抛，单靠 catch 捕不到，必须靠 B2 移除。真机三态对照见 workflow-sync/handoff/20261031-dsh-compat-L2补丁真机复验.md。"
 		}
 	]
 }

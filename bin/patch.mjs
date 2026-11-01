@@ -2,8 +2,14 @@
 /**
  * dsh-compat · L2 兼容补丁管理器
  *
- * 给 profile 树里的 `@deepseek-ai/dsh-client-modules/lib/client.js` 打上
- * 「单插件加载失败不连坐整页」补丁（毒化代理 + `start()` 逐条目 catch）。
+ * 给 `@deepseek-ai/dsh-client-modules/lib/client.js` 打上
+ * 「单插件加载失败不连坐整页」补丁（毒化代理 + `start()` 逐条目 catch + audit 前清 FAILED）。
+ *
+ * 目标寻址：
+ *   --profile <name|path>   <profile>/node_modules/...（默认 $DSH_HOME/profiles/web）
+ *   --node-modules <dir>    直接指定 node_modules 根；Termux 用全局树：
+ *     node bin/patch.mjs --apply --node-modules "$(npm root -g)/dsh-termux/node_modules"
+ *   （Termux 实测全新 profile 不物化 @deepseek-ai/*，宿主直走全局树；见 README）
  *
  * 设计取舍：
  * - 补丁文件是标准 unified diff，供人审阅，也可用 `git apply` 兜底；
@@ -14,13 +20,14 @@
  *   也不污染共享 store；打补丁前留下 `<file>.orig`，回滚后删除。
  *
  * 用法：
- *   node bin/patch.mjs [--check|--apply|--revert] [--profile <name|path>] [--json]
+ *   node bin/patch.mjs [--check|--apply|--revert] [--profile <name|path> | --node-modules <dir>] [--json]
  *
- *   --check   默认；只报告。有漂移、或补丁尚未应用时退出码 1
- *   --apply   打补丁；存在漂移时整体拒绝（不半套）
- *   --revert  回滚为 pristine；存在漂移时整体拒绝
- *   --profile 默认 $DSH_HOME/profiles/web；可给 profile 名或绝对路径
- *   --json    机读输出
+ *   --check        默认；只报告。有漂移、或补丁尚未应用时退出码 1
+ *   --apply        打补丁；存在漂移时整体拒绝（不半套）
+ *   --revert       回滚为 pristine；存在漂移时整体拒绝
+ *   --profile      默认 $DSH_HOME/profiles/web；可给 profile 名或绝对路径
+ *   --node-modules 直接指定 node_modules 根（与 --profile 同给时以它为准）
+ *   --json         机读输出
  */
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -129,8 +136,8 @@ function resolveProfile(value) {
 }
 
 /** 0 skip / 1 create / 2 pristine / 3 patched / 4 drift */
-function inspect(target, profile) {
-	const pkgDir = join(profile, "node_modules", target.pkg);
+function inspect(target, nodeModules) {
+	const pkgDir = join(nodeModules, target.pkg);
 	const pkgFile = join(pkgDir, target.rel);
 	if (!existsSync(pkgDir)) return { state: "skip", why: "not installed", file: pkgFile };
 	if (!existsSync(pkgFile)) {
@@ -154,8 +161,8 @@ function backupPath(file) {
 	return `${file}.orig`;
 }
 
-function applyOne(target, profile) {
-	const info = inspect(target, profile);
+function applyOne(target, nodeModules) {
+	const info = inspect(target, nodeModules);
 	if (info.state === "skip" || info.state === "patched") return info;
 	if (info.state === "drift") throw new Error(`漂移，拒绝打补丁：${target.pkg}/${target.rel}（${info.why}）`);
 	if (info.state === "create") throw new Error(`create 目标尚未支持：${target.pkg}/${target.rel}`);
@@ -173,8 +180,8 @@ function applyOne(target, profile) {
 	return { ...info, state: "patched", why: "patched" };
 }
 
-function revertOne(target, profile) {
-	const info = inspect(target, profile);
+function revertOne(target, nodeModules) {
+	const info = inspect(target, nodeModules);
 	if (info.state === "skip" || info.state === "pristine") return info;
 	if (info.state === "drift") throw new Error(`漂移，拒绝回滚：${target.pkg}/${target.rel}（${info.why}）`);
 	if (info.state === "create") throw new Error(`create 目标尚未支持：${target.pkg}/${target.rel}`);
@@ -202,13 +209,14 @@ const LABELS = {
 function printHelp() {
 	process.stdout.write(`dsh-compat · L2 兼容补丁管理器
 
-用法：node bin/patch.mjs [--check|--apply|--revert] [--profile <name|path>] [--json]
+用法：node bin/patch.mjs [--check|--apply|--revert] [--profile <name|path> | --node-modules <dir>] [--json]
 
-  --check   默认；只报告。存在漂移或补丁未应用时退出码 1
-  --apply   打补丁；存在漂移时整体拒绝
-  --revert  回滚为 pristine；存在漂移时整体拒绝
-  --profile profile 名或绝对路径（默认 $DSH_HOME/profiles/web）
-  --json    机读输出
+  --check        默认；只报告。存在漂移或补丁未应用时退出码 1
+  --apply        打补丁；存在漂移时整体拒绝
+  --revert       回滚为 pristine；存在漂移时整体拒绝
+  --profile      profile 名或绝对路径（默认 $DSH_HOME/profiles/web）
+  --node-modules 直接指定 node_modules 根（Termux 全局树用；与 --profile 同给时优先）
+  --json         机读输出
 `);
 }
 
@@ -227,6 +235,7 @@ function main() {
 	const args = process.argv.slice(2);
 	let mode = "check";
 	let profileArg;
+	let nodeModulesArg;
 	let manifestPath = DEFAULT_MANIFEST;
 	let json = false;
 	for (let i = 0; i < args.length; i++) {
@@ -241,6 +250,9 @@ function main() {
 		} else if (arg === "--profile") {
 			profileArg = args[++i];
 			if (profileArg === undefined) usage("--profile 需要一个值");
+		} else if (arg === "--node-modules") {
+			nodeModulesArg = args[++i];
+			if (nodeModulesArg === undefined) usage("--node-modules 需要一个值");
 		} else if (arg === "-h" || arg === "--help") {
 			printHelp();
 			return;
@@ -253,14 +265,17 @@ function main() {
 	} catch (error) {
 		fail(`读不了补丁清单 ${manifestPath}：${error.message}`);
 	}
-	const profile = resolveProfile(profileArg);
+	const nodeModules =
+		nodeModulesArg === undefined
+			? join(resolveProfile(profileArg), "node_modules")
+			: resolve(expandHome(nodeModulesArg));
 	const rows = [];
 	let drifted = 0;
 	let todo = 0;
 	let done = 0;
 	for (const target of manifest.targets) {
 		try {
-			const info = mode === "apply" ? applyOne(target, profile) : mode === "revert" ? revertOne(target, profile) : inspect(target, profile);
+			const info = mode === "apply" ? applyOne(target, nodeModules) : mode === "revert" ? revertOne(target, nodeModules) : inspect(target, nodeModules);
 			rows.push({ id: target.id, pkg: target.pkg, rel: target.rel, state: info.state, why: info.why });
 			if (info.state === "drift") drifted++;
 			if (info.state === "pristine" || info.state === "create") todo++;
@@ -272,9 +287,9 @@ function main() {
 	}
 
 	if (json) {
-		process.stdout.write(`${JSON.stringify({ profile, mode, ok: drifted === 0 && (mode !== "check" || todo === 0), rows }, null, "\t")}\n`);
+		process.stdout.write(`${JSON.stringify({ nodeModules, mode, ok: drifted === 0 && (mode !== "check" || todo === 0), rows }, null, "\t")}\n`);
 	} else {
-		process.stdout.write(`profile：${profile}\n`);
+		process.stdout.write(`目标 node_modules：${nodeModules}\n`);
 		for (const row of rows) {
 			const label = row.state === "error" ? "ERROR " : LABELS[row.state];
 			process.stdout.write(`${label} ${row.pkg}/${row.rel}  (${row.why})\n`);
