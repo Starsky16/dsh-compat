@@ -20,7 +20,7 @@
  *   也不污染共享 store；打补丁前留下 `<file>.orig`，回滚后删除。
  *
  * 用法：
- *   node bin/patch.mjs [--check|--apply|--revert] [--profile <name|path> | --node-modules <dir>] [--json]
+ *   node bin/patch.mjs [--check|--apply|--revert] [--profile <name|path> | --node-modules <dir>] [--allow-drift --force] [--json]
  *
  *   --check        默认；只报告。有漂移、或补丁尚未应用时退出码 1
  *   --apply        打补丁；存在漂移时整体拒绝（不半套）
@@ -113,21 +113,21 @@ export function applyPatch(source, patchText, reverse = false) {
 	return out.join("\n");
 }
 
-function readManifest(path) {
+export function readManifest(path) {
 	const manifest = JSON.parse(readFileSync(path, "utf8"));
 	if (!Array.isArray(manifest.targets) || manifest.targets.length === 0) throw new Error(`${path} 里没有 targets`);
 	return manifest;
 }
 
-function patchPath(target) {
+export function patchPath(target) {
 	return isAbsolute(target.patch) ? target.patch : join(ROOT, target.patch);
 }
 
-function expandHome(value) {
+export function expandHome(value) {
 	return value.replace(/^~(?=$|[\\/])/, homedir());
 }
 
-function resolveProfile(value) {
+export function resolveProfile(value) {
 	const dshHome = process.env.DSH_HOME ?? join(homedir(), ".dsh");
 	if (value === undefined) return join(dshHome, "profiles", "web");
 	const expanded = expandHome(value);
@@ -136,7 +136,7 @@ function resolveProfile(value) {
 }
 
 /** 0 skip / 1 create / 2 pristine / 3 patched / 4 drift */
-function inspect(target, nodeModules) {
+export function inspect(target, nodeModules) {
 	const pkgDir = join(nodeModules, target.pkg);
 	const pkgFile = join(pkgDir, target.rel);
 	if (!existsSync(pkgDir)) return { state: "skip", why: "not installed", file: pkgFile };
@@ -161,29 +161,39 @@ function backupPath(file) {
 	return `${file}.orig`;
 }
 
-function applyOne(target, nodeModules) {
+function applyOne(target, nodeModules, allowDrift) {
 	const info = inspect(target, nodeModules);
 	if (info.state === "skip" || info.state === "patched") return info;
-	if (info.state === "drift") throw new Error(`漂移，拒绝打补丁：${target.pkg}/${target.rel}（${info.why}）`);
+	if (info.state === "drift" && !allowDrift) throw new Error(`漂移，拒绝打补丁：${target.pkg}/${target.rel}（${info.why}）`);
 	if (info.state === "create") throw new Error(`create 目标尚未支持：${target.pkg}/${target.rel}`);
 	const patchText = readFileSync(patchPath(target), "utf8");
 	const original = readFileSync(info.file, "utf8");
 	const patched = applyPatch(original, patchText, false);
 	const got = sha256(patched);
-	if (got !== target.patched_sha256) throw new Error(`补丁后哈希不符：${target.pkg}/${target.rel}（得到 ${got}）`);
+	const forced = info.state === "drift";
+	if (!forced && got !== target.patched_sha256) throw new Error(`补丁后哈希不符：${target.pkg}/${target.rel}（得到 ${got}）`);
+	if (forced) process.stderr.write(`[dsh-compat] ⚠ 强制打补丁（--allow-drift --force）：跳过哈希校验 ${target.pkg}/${target.rel}\n`);
 	if (!existsSync(backupPath(info.file))) copyFileSync(info.file, backupPath(info.file));
 	writeAtomic(info.file, patched);
-	if (sha256(readFileSync(info.file, "utf8")) !== target.patched_sha256) {
+	if (!forced && sha256(readFileSync(info.file, "utf8")) !== target.patched_sha256) {
 		copyFileSync(backupPath(info.file), info.file);
 		throw new Error(`写入后校验失败，已恢复备份：${target.pkg}/${target.rel}`);
 	}
-	return { ...info, state: "patched", why: "patched" };
+	return { ...info, state: "patched", why: forced ? "patched (drift, forced)" : "patched" };
 }
 
-function revertOne(target, nodeModules) {
+function revertOne(target, nodeModules, allowDrift) {
 	const info = inspect(target, nodeModules);
 	if (info.state === "skip" || info.state === "pristine") return info;
-	if (info.state === "drift") throw new Error(`漂移，拒绝回滚：${target.pkg}/${target.rel}（${info.why}）`);
+	if (info.state === "drift") {
+		if (!allowDrift) throw new Error(`漂移，拒绝回滚：${target.pkg}/${target.rel}（${info.why}）`);
+		// 强制打过的文件没有可校验的 patched 哈希，优先用打补丁前的 .orig 原样恢复。
+		if (!existsSync(backupPath(info.file))) throw new Error(`漂移且没有 .orig 备份，无法回滚：${target.pkg}/${target.rel}`);
+		copyFileSync(backupPath(info.file), info.file);
+		rmSync(backupPath(info.file));
+		process.stderr.write(`[dsh-compat] ⚠ 从 .orig 恢复（--allow-drift --force）：${target.pkg}/${target.rel}\n`);
+		return { ...info, state: "pristine", why: "restored from .orig (drift, forced)" };
+	}
 	if (info.state === "create") throw new Error(`create 目标尚未支持：${target.pkg}/${target.rel}`);
 	const patchText = readFileSync(patchPath(target), "utf8");
 	const patched = readFileSync(info.file, "utf8");
@@ -209,13 +219,15 @@ const LABELS = {
 function printHelp() {
 	process.stdout.write(`dsh-compat · L2 兼容补丁管理器
 
-用法：node bin/patch.mjs [--check|--apply|--revert] [--profile <name|path> | --node-modules <dir>] [--json]
+用法：node bin/patch.mjs [--check|--apply|--revert] [--profile <name|path> | --node-modules <dir>] [--allow-drift --force] [--json]
 
   --check        默认；只报告。存在漂移或补丁未应用时退出码 1
   --apply        打补丁；存在漂移时整体拒绝
   --revert       回滚为 pristine；存在漂移时整体拒绝
   --profile      profile 名或绝对路径（默认 $DSH_HOME/profiles/web）
   --node-modules 直接指定 node_modules 根（Termux 全局树用；与 --profile 同给时优先）
+  --allow-drift  漂移时仍尝试应用锚点；必须与 --force 同时使用，跳过 patched 哈希校验
+  --force        确认强制（只用于配合 --allow-drift）
   --json         机读输出
 `);
 }
@@ -238,12 +250,16 @@ function main() {
 	let nodeModulesArg;
 	let manifestPath = DEFAULT_MANIFEST;
 	let json = false;
+	let allowDrift = false;
+	let force = false;
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === "--check") mode = "check";
 		else if (arg === "--apply") mode = "apply";
 		else if (arg === "--revert") mode = "revert";
 		else if (arg === "--json") json = true;
+		else if (arg === "--allow-drift") allowDrift = true;
+		else if (arg === "--force") force = true;
 		else if (arg === "--manifest") {
 			manifestPath = args[++i];
 			if (manifestPath === undefined) usage("--manifest 需要一个值");
@@ -258,6 +274,9 @@ function main() {
 			return;
 		} else usage(`未知参数：${arg}`);
 	}
+
+	if (allowDrift && !force) usage("--allow-drift 必须与 --force 同时使用（二次确认）");
+	if (force && !allowDrift) usage("--force 只用于配合 --allow-drift");
 
 	let manifest;
 	try {
@@ -275,7 +294,7 @@ function main() {
 	let done = 0;
 	for (const target of manifest.targets) {
 		try {
-			const info = mode === "apply" ? applyOne(target, nodeModules) : mode === "revert" ? revertOne(target, nodeModules) : inspect(target, nodeModules);
+			const info = mode === "apply" ? applyOne(target, nodeModules, allowDrift) : mode === "revert" ? revertOne(target, nodeModules, allowDrift) : inspect(target, nodeModules);
 			rows.push({ id: target.id, pkg: target.pkg, rel: target.rel, state: info.state, why: info.why });
 			if (info.state === "drift") drifted++;
 			if (info.state === "pristine" || info.state === "create") todo++;

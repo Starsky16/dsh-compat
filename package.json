@@ -9,11 +9,13 @@
 	},
 	"bin": {
 		"dsh-compat-doctor": "bin/doctor.mjs",
-		"dsh-compat-patch": "bin/patch.mjs"
+		"dsh-compat-patch": "bin/patch.mjs",
+		"dsh-compat-selfcheck": "bin/selfcheck.mjs"
 	},
 	"scripts": {
 		"doctor": "node bin/doctor.mjs",
 		"patch": "node bin/patch.mjs",
+		"selfcheck": "node bin/selfcheck.mjs",
 		"test": "node --test \"test/*.test.mjs\""
 	},
 	"license": "MIT"

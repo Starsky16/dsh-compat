@@ -10,6 +10,7 @@ import { applyPatch, parseHunks, sha256 } from "../bin/patch.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BIN = resolve(HERE, "..", "bin", "patch.mjs");
+const SELFCHECK = resolve(HERE, "..", "bin", "selfcheck.mjs");
 
 const PRISTINE = "alpha\nbeta\ngamma\n";
 const PATCH = [
@@ -207,6 +208,74 @@ test("CLI：--node-modules 直接指定 node_modules 根（Termux 全局树路�
 		result = run(["--revert", "--manifest", fixture.manifest, "--node-modules", nodeModules]);
 		assert.equal(result.status, 0, result.stderr);
 		assert.equal(readFileSync(fixture.file, "utf8"), PRISTINE);
+	} finally {
+		rmSync(fixture.root, { recursive: true, force: true });
+	}
+});
+
+function runSelfcheck(args) {
+	return spawnSync(process.execPath, [SELFCHECK, ...args], { encoding: "utf8" });
+}
+
+test("CLI：--allow-drift 必须与 --force 同时使用", () => {
+	const fixture = makeFixture();
+	try {
+		const result = run(["--apply", "--manifest", fixture.manifest, "--profile", fixture.profile, "--allow-drift"]);
+		assert.equal(result.status, 2);
+		assert.match(result.stderr, /必须与 --force 同时使用/);
+		assert.equal(readFileSync(fixture.file, "utf8"), PRISTINE, "用法错时不得改文件");
+	} finally {
+		rmSync(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("CLI：漂移 + --allow-drift --force 可强打，revert 用 .orig 原样恢复", () => {
+	const fixture = makeFixture();
+	const drift = `${PRISTINE}extra\n`; // hunk 区域外多一行：锚点可应用，但整文件哈希漂移
+	try {
+		writeFileSync(fixture.file, drift, "utf8");
+		const args = ["--manifest", fixture.manifest, "--profile", fixture.profile, "--allow-drift", "--force"];
+
+		let result = run(["--apply", ...args]);
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stderr, /强制打补丁/);
+		assert.equal(readFileSync(fixture.file, "utf8"), `${PATCHED}extra\n`);
+		assert.ok(existsSync(`${fixture.file}.orig`), "强打也应留 .orig");
+
+		result = run(["--revert", ...args]);
+		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stderr, /从 \.orig 恢复/);
+		assert.equal(readFileSync(fixture.file, "utf8"), drift);
+		assert.ok(!existsSync(`${fixture.file}.orig`), "恢复后应删除 .orig");
+	} finally {
+		rmSync(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("selfcheck：未打补丁只告警、退出 0、不改文件", () => {
+	const fixture = makeFixture();
+	try {
+		const result = runSelfcheck(["--manifest", fixture.manifest, "--node-modules", join(fixture.profile, "node_modules")]);
+		assert.equal(result.status, 0, "自检只告警，永不阻塞");
+		assert.match(result.stderr, /L2 补丁未就绪/);
+		assert.match(result.stderr, /未打补丁/);
+		assert.match(result.stderr, /--apply/);
+		assert.equal(readFileSync(fixture.file, "utf8"), PRISTINE);
+	} finally {
+		rmSync(fixture.root, { recursive: true, force: true });
+	}
+});
+
+test("selfcheck：已打补丁时静默通过", () => {
+	const fixture = makeFixture();
+	try {
+		const nodeModules = join(fixture.profile, "node_modules");
+		const applied = run(["--apply", "--manifest", fixture.manifest, "--node-modules", nodeModules]);
+		assert.equal(applied.status, 0, applied.stderr);
+
+		const result = runSelfcheck(["--manifest", fixture.manifest, "--node-modules", nodeModules]);
+		assert.equal(result.status, 0);
+		assert.equal(result.stderr, "");
 	} finally {
 		rmSync(fixture.root, { recursive: true, force: true });
 	}

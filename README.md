@@ -9,10 +9,10 @@ DeepSeek Harness 插件兼容层：**L2 加载器隔离补丁** + **L3 客户端
 | 组件 | 状态 | 说明 |
 |---|---|---|
 | L4 门禁 `bin/doctor.mjs` | ✅ 可用（2026-10-28） | WIN 实跑 desktop profile 全 PASS；fixture 矩阵全符合 |
-| L2 隔离补丁 `patches/compat/` + `bin/patch.mjs` | ✅ 真机验证（2026-10-31） | A 毒化代理 + `start()` 逐条目 catch + **B2（audit 前清 FAILED 条目）**；三态对照实测通过。Termux 打全局树（`--node-modules`），升级被覆盖由 T7 自检兜底 |
+| L2 隔离补丁 `patches/compat/` + `bin/patch.mjs` | ✅ 真机验证（2026-10-31） | A 毒化代理 + `start()` 逐条目 catch + **B2（audit 前清 FAILED 条目）**；三态对照实测通过。Termux 打全局树（`--node-modules`），升级覆盖由 `bin/selfcheck.mjs` 只告警兜底 |
 | T1 加载器勘察（spike） | ✅ 静态 + 动态半场完成 | 报告 `docs/spike-loader-isolation.md`（rc.3 静态 + Termux rc.5 真机） |
 | L3 垫片 `lib/index.js` + `css/` | ⬜ 未落地 | 文件尚未创建，**暂不要把本仓整包装进 profile**（见下方安装说明） |
-| T7 市场路径统一 | ⬜ 未开工 | 结论已改判：启动自检 + `doctor --fix` 为主兜底 |
+| T7 启动自检 `bin/selfcheck.mjs` | 🟡 脚本落地（2026-11-01，只告警） | sha256 校验补丁目标；未打/漂移/缺失时 stderr 告警、退出码恒 0。接线（Termux 包装/启动脚本）待与 termux-dsh 对齐；市场路径仍靠 doctor 手动兜底 |
 | Termux 动态半场验证 | ✅ 2026-10-31 | 整页崩复现、doctor 矩阵符合（android→linux PASS）、注入顺序 push；交接见 `workflow-sync/handoff/20261031-dsh-compat-Termux动态半场测试.md` |
 
 > 平台边界：**WIN 只上 L3+L4**——dsh 核心在 `app.asar` 内不可写，L2 加载器补丁不适用。L2 补丁的**归属**按 2026-10-31 D8 结论归本仓（原「归 termux-dsh」是 D8 前旧口径）。**目标树已定**：Termux 打全局树（`--node-modules "$(npm root -g)/dsh-termux/node_modules"`）——实测全新 profile 不物化 `@deepseek-ai/*`，宿主直走全局树（见 `handoff/20261031-dsh-compat-L2补丁真机复验.md`）。
@@ -39,10 +39,17 @@ node bin/patch.mjs --revert --node-modules "$NM"
 
 # profile 树（将来若某版本把 @deepseek-ai/* 装进 profile 才用得上）
 node bin/patch.mjs --check [--profile web]
+
+# 启动自检（只告警，不改文件、不阻塞）：升级 dsh 后确认补丁还在
+node bin/selfcheck.mjs --node-modules "$NM"
+
+# 漂移逃生口：dsh 升级导致 client.js 哈希变化时，锚点仍匹配才允许强打
+node bin/patch.mjs --apply --node-modules "$NM" --allow-drift --force
 ```
 
 - 目标：`<node-modules>/@deepseek-ai/dsh-client-modules/lib/client.js`。`--node-modules` 直接给根；`--profile` 等价于 `<profile>/node_modules`，两者同给时以 `--node-modules` 为准。
-- Termux 实测：全新 profile 的 `node_modules/@deepseek-ai` 为空，宿主直走全局树；所以生产打全局树（`$(npm root -g)/dsh-termux/node_modules`）。代价是 **升级 dsh 后补丁被覆盖**，由 T7 的启动自检 sha256 表兜底（待落地）。
+- Termux 实测：全新 profile 的 `node_modules/@deepseek-ai` 为空，宿主直走全局树；所以生产打全局树（`$(npm root -g)/dsh-termux/node_modules`）。代价是 **升级 dsh 后补丁被覆盖**，由 `bin/selfcheck.mjs` 只告警兜底（不自动重打、不拒绝启动）。
+- `--allow-drift --force`：默认对 `pristine_sha256` / `patched_sha256` 硬拒绝；两参数同给时，只有 hunk 锚点仍能匹配才强打，跳过 patched 哈希校验，`--revert` 从 `.orig` 原样恢复。**只在确认上游只是小改、且事后会验页面时用。**
 - 清单：`patches/compat/manifest.json` 锁 `pristine_sha256` / `patched_sha256`；`rc.3` 与 `rc.5` 的该文件字节一致，同一补丁锚定两版，其他版本哈希不匹配即拒绝。
 - 补丁内容（A + 隔离 + B2）：
   - `makeRequire` 未命中返回**毒化代理**（使用即抛，带 `[dsh-compat]` 与缺失 spec 的归因），不再击穿整个 `start()`；
@@ -96,11 +103,12 @@ node bin/doctor.mjs test/fixtures/probe-profile
 dsh-compat/
 ├─ bin/doctor.mjs              # L4 安装门禁（可执行）
 ├─ bin/patch.mjs               # L2 补丁管理：check / apply / revert
+├─ bin/selfcheck.mjs           # L2 启动自检：只告警，不改文件
 ├─ patches/compat/             # L2 补丁 + manifest（锁 pristine/patched sha256）
 ├─ compat/known.json           # 逃生口：已核实的人工例外
 ├─ docs/spike-loader-isolation.md  # 0.2.1-rc.3 加载器/契约/市场路径勘察
 ├─ test/fixtures/              # doctor 矩阵 + 运行时 fixture
-├─ test/patch.test.mjs         # 补丁应用器与 CLI 的单元/端到端测试
+├─ test/patch.test.mjs         # 补丁应用器 / CLI / 自检的单元与端到端测试
 └─ package.json
 ```
 
