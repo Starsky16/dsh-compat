@@ -117,6 +117,16 @@
 - 全新 profile 必须先 `dsh --profile <名> --from-default-profile web` 初始化。
 - **`dsh plugin add` 只写 `dependencies`，不会让插件进 loader**：要真正加载，必须手工在 profile 的 `cordis.patch.yml` 写 `- insert:` 块（单条 `- id: <name>` 会报 `entry not found`）。
 - `--dsw-specific-menu` 在 rc.5 已移入客户端 CSS 资源（`assets/index-*.css`），不在首页 HTML；顺序判据用「injector 在 boot style 之后」即与版本无关。
+- **`dsh web --profile <名>` 会撞 profile 名**（2026-11-01 真机实测）：`web` 本身被解析成 profile，再加 `--profile probe` 报 `option '--profile <name>' argument 'probe' is invalid. select a profile only once`。正确写法是 **`dsh --profile probe --no-open --port 8099`**（profile 放在子命令前）。
+- **`cordis.patch.yml` 不能直接 `cat >>`**（同 `termux-dsh/profile/apply-overrides.sh` 的坑）：新 profile 该文件内容是 `[]`（一个空数组文档），追加会变成两个 YAML 文档，`--dump-config` 在 `parsePatchList` 抛错。必须先删空数组行再追加：
+  ```bash
+  sed -i '/^[[:space:]]*\[\][[:space:]]*$/d' "$DSH_HOME/profiles/probe/cordis.patch.yml"
+  cat >> "$DSH_HOME/profiles/probe/cordis.patch.yml" <<'YAML'
+  - insert:
+      - id: dsh-bad-plugin
+        name: dsh-bad-plugin
+  YAML
+  ```
 
 ### 尚未覆盖
 
