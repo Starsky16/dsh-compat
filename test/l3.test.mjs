@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { readManifest, sha256 } from "../bin/patch.mjs";
-import { apply, defaultNodeModules, l2Selfcheck } from "../lib/index.js";
+import { apply, defaultNodeModules, l2Selfcheck, nodeModuleCandidateRoots } from "../lib/index.js";
 import { POLYFILLS } from "../lib/polyfills.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -30,7 +30,25 @@ test("POLYFILLS 只补缺失：randomUUID 与 AbortSignal.any 都有守卫", () 
 	assert.match(POLYFILLS, /dshCompatPerf/);
 });
 
-test("defaultNodeModules：android + PREFIX 解析 Termux 全局树；显式 env 优先；可禁用", () => {
+test("nodeModuleCandidateRoots：候选根按平台一般化（win 不探测 / PREFIX 优先 / 标准 npm -g 根）", () => {
+	// WIN 桌面端 dsh 核心在 app.asar 内不可写，L2 不适用 → 不探测
+	assert.deepEqual(nodeModuleCandidateRoots({}, "win32"), []);
+	// Termux：PREFIX 即 npm -g 根，零配置命中
+	assert.deepEqual(nodeModuleCandidateRoots({ PREFIX: "/x" }, "android"), ["/x/lib/node_modules"]);
+	// 标准 Linux/macOS：无 PREFIX 时补两个标准根
+	assert.deepEqual(nodeModuleCandidateRoots({}, "linux"), [
+		"/usr/local/lib/node_modules",
+		"/usr/lib/node_modules",
+	]);
+	// 有 PREFIX 的非 android（如自设 PREFIX 的容器）：PREFIX 在前，标准根兜底
+	assert.deepEqual(nodeModuleCandidateRoots({ PREFIX: "/x" }, "linux"), [
+		"/x/lib/node_modules",
+		"/usr/local/lib/node_modules",
+		"/usr/lib/node_modules",
+	]);
+});
+
+test("defaultNodeModules：显式 env 优先；合成 PREFIX 树命中；无任何 dsh 树时静默 null", () => {
 	// DSH_COMPAT_NM 显式指定永远优先
 	assert.equal(defaultNodeModules({ DSH_COMPAT_NM: "/data/local/tmp/nm" }), "/data/local/tmp/nm");
 	// 禁用开关压过一切
@@ -38,16 +56,24 @@ test("defaultNodeModules：android + PREFIX 解析 Termux 全局树；显式 env
 		defaultNodeModules({ DSH_COMPAT_DISABLE_L2_SELFCHECK: "1", PREFIX: "/data/data/com.termux/files/usr" }),
 		null,
 	);
+
+	// 合成 PREFIX 树：候选根下存在 dsh-termux/node_modules 就命中（任何平台）
+	const fake = mkdtempSync(join(tmpdir(), "dsh-compat-nm-"));
+	try {
+		const fakeNm = join(fake, "lib", "node_modules", "dsh-termux", "node_modules");
+		mkdirSync(fakeNm, { recursive: true });
+		assert.equal(defaultNodeModules({ PREFIX: fake }), fakeNm);
+	} finally {
+		rmSync(fake, { recursive: true, force: true });
+	}
+
+	// 本机实况：android 无 PREFIX → 无候选根 → null（不猜）
 	if (process.platform === "android") {
+		assert.equal(defaultNodeModules({}), null);
 		assert.equal(
 			defaultNodeModules({ PREFIX: "/data/data/com.termux/files/usr" }),
 			"/data/data/com.termux/files/usr/lib/node_modules/dsh-termux/node_modules",
 		);
-		// 无 PREFIX（非交互 shell 实况）→ 不猜，返回 null
-		assert.equal(defaultNodeModules({}), null);
-	} else {
-		// 非 android 平台不做全局树探测（WIN 侧补丁由 doctor/手动 patch.mjs 管理）
-		assert.equal(defaultNodeModules({}), null);
 	}
 });
 

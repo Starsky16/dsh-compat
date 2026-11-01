@@ -19,24 +19,39 @@ DeepSeek Harness 插件兼容层：**L2 加载器隔离补丁** + **L3 客户端
 
 ## 安装 / 使用
 
-**doctor 不需要安装**，克隆后直接用 Node 运行（Node ≥ 24.2）：
+**环境要求**：Node ≥ 24.2；dsh（官方或 [termux-dsh](https://github.com/Starsky16/termux-dsh) 重组包）。
+
+| 环境 | L2 补丁（加载器隔离） | L3 垫片（polyfill + CSS） | L4 doctor |
+|---|---|---|---|
+| Termux（termux-dsh） | ✅ 打全局树，自动探测 | ✅ | ✅ |
+| Linux / macOS 桌面 | 若装了 dsh-termux 全局树则自动探测，否则静默跳过 | ✅ | ✅ |
+| Windows 桌面 | ❌ dsh 核心在 app.asar 内不可写 | ✅ | ✅ |
+
+三种安装方式（任选其一，装完 `dsh plugin add` 会自动把 dsh-compat 挂进 profile 的 bundle 栈）：
 
 ```bash
+# ① git URL 直装（普适，自动跟随 GitHub 仓库）
+dsh plugin --profile <名> add https://github.com/Starsky16/dsh-compat.git
+
+# ② Release tgz（锁版本）：从 https://github.com/Starsky16/dsh-compat/releases 下载
+dsh plugin --profile <名> add ./dsh-compat-0.1.0.tgz
+
+# ③ 本地 clone（开发态，link: 目录依赖）
 git clone https://github.com/Starsky16/dsh-compat.git ~/code/dsh-compat
+dsh plugin --profile <名> add ~/code/dsh-compat
+```
+
+**doctor 不需要安装插件**，克隆后直接用 Node 运行：
+
+```bash
 node ~/code/dsh-compat/bin/doctor.mjs            # 自动探测 $DSH_HOME/profiles/{web,desktop}
 ```
 
-## L3 客户端垫片（纯 host 注入）
-
-```bash
-# 从本地仓库安装（开发态，link: 目录依赖）
-dsh plugin --profile web add ~/code/dsh-compat
-
-# 从 Release tgz 安装（发布态）：GitHub Release 的 dsh-compat-<版本>.tgz
-dsh plugin --profile web add ./dsh-compat-0.1.0.tgz
-```
+L2 目标树探测（`lib/index.js` 的 `nodeModuleCandidateRoots`）：`$PREFIX/lib/node_modules`（Termux 与自设 PREFIX 的环境）→ `/usr/local/lib/node_modules` → `/usr/lib/node_modules`，任一处存在 `dsh-termux/node_modules` 即命中；都不存在则 L2 自检静默跳过、不影响 L3/L4。`DSH_COMPAT_NM` 显式指定目标树；`DSH_COMPAT_DISABLE_L2_SELFCHECK=1` 关闭激活自检。
 
 包形态：`package.json` 带 `files` 白名单（lib / css / bin / patches / compat / cordis.patch.yml），`npm pack` 出的 tgz 只含运行必需物；`patches/compat/manifest.json` 随包分发，L3 激活自检与 `bin/selfcheck.mjs` 在解包后直接可用。发布 tgz 由 CI 挂 GitHub Release（`.github/workflows/release.yml`，dispatch 触发，测试通过才打包，同版本重发先删后建），不发包到 npm 公网源。
+
+## L3 客户端垫片（纯 host 注入）
 
 组成（plans Task 3，按 2026-11-01 真机结论修订）：
 
@@ -45,7 +60,7 @@ dsh plugin --profile web add ./dsh-compat-0.1.0.tgz
 - **`css/perf.css`** → opt-in：只在 `[data-dsh-compat-perf="1"]` 下生效（触屏才打开），关 backdrop-filter、动画时长归零。
 - **L2 激活自检（T7 方案 C）**：插件 `apply()` 时按 manifest sha256 校验全局树补丁，未打/漂移只 stderr 告警（判据与 `bin/selfcheck.mjs` 一致）；`DSH_COMPAT_NM` 可覆盖目标树，`DSH_COMPAT_DISABLE_L2_SELFCHECK=1` 关闭。
 
-真机冒烟（2026-11-01，rc.5-tdsh.4）：隔离 profile 装 dsh-compat → 首页 6 处注入痕迹；顺序 = boot style → L3 样式（后写覆盖成立）→ body 起始处 polyfill；selfcheck `ready: true`；`npm test` 23/23（原 15 + L3 8）。
+真机冒烟（2026-11-01，rc.5-tdsh.4）：隔离 profile 装 dsh-compat → 首页 6 处注入痕迹；顺序 = boot style → L3 样式（后写覆盖成立）→ body 起始处 polyfill；selfcheck `ready: true`。git URL 直装、tgz 安装与本地目录安装三态验证注入一致（41456B）。
 
 
 ## L2 加载器隔离补丁
