@@ -29,10 +29,14 @@ node ~/code/dsh-compat/bin/doctor.mjs            # 自动探测 $DSH_HOME/profil
 ## L3 客户端垫片（纯 host 注入）
 
 ```bash
-# 安装即挂载：package.json 声明了 dsh.bundle.patch，CLI 会把 dsh-compat 追加进
-# profile 的 bundle 栈，不需要手工改 cordis.patch.yml
+# 从本地仓库安装（开发态，link: 目录依赖）
 dsh plugin --profile web add ~/code/dsh-compat
+
+# 从 Release tgz 安装（发布态）：GitHub Release 的 dsh-compat-<版本>.tgz
+dsh plugin --profile web add ./dsh-compat-0.1.0.tgz
 ```
+
+包形态：`package.json` 带 `files` 白名单（lib / css / bin / patches / compat / cordis.patch.yml），`npm pack` 出的 tgz 只含运行必需物；`patches/compat/manifest.json` 随包分发，L3 激活自检与 `bin/selfcheck.mjs` 在解包后直接可用。发布 tgz 由 CI 挂 GitHub Release（`.github/workflows/release.yml`，dispatch 触发，测试通过才打包，同版本重发先删后建），不发包到 npm 公网源。
 
 组成（plans Task 3，按 2026-11-01 真机结论修订）：
 

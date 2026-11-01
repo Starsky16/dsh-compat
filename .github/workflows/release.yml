@@ -1,0 +1,81 @@
+name: Release tgz
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，留空 = 用 package.json 当前版本"
+        required: false
+        default: ""
+      prerelease:
+        description: "标记为 pre-release"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-tgz
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # 版本以 dispatch 输入为准（CI 内临时覆盖，不回写仓库）；
+      # npm test 在打包前跑一遍，红了就不发。
+      - name: Resolve version & test
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            node -e "
+              const fs = require('fs');
+              const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+              p.version = '${{ inputs.version }}';
+              fs.writeFileSync('package.json', JSON.stringify(p, null, '\t') + '\n');
+            "
+          fi
+          VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=v$VERSION" >> "$GITHUB_ENV"
+          npm test
+
+      - name: Pack
+        run: |
+          mkdir -p dist
+          npm pack --pack-destination dist
+          FILE="dsh-compat-$VERSION.tgz"
+          echo "FILE=$FILE" >> "$GITHUB_ENV"
+          sha256sum "dist/$FILE" > "dist/$FILE.sha256"
+          cat "dist/$FILE.sha256"
+
+      # 同版本重发 = 先删后建（对齐 termux-dsh repack 的幂等口径）
+      - name: Delete existing release
+        run: |
+          gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Create release
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            ${{ inputs.prerelease && '--prerelease' || '' }} \
+            --title "dsh-compat $TAG" \
+            --notes "dsh-compat 插件包（npm tgz）。下载 $FILE 并核对 sha256 后安装：
+
+          dsh plugin --profile <名> add ./dsh-compat-*.tgz
+
+          - commit: $GITHUB_SHA
+          - L2 补丁目标与哈希锁定见 patches/compat/manifest.json（dsh 0.2.1-rc.3 / rc.5）"
+          gh release upload "$TAG" "dist/$FILE" "dist/$FILE.sha256" --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
