@@ -1,6 +1,6 @@
 {
 	"name": "dsh-compat",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "dsh 插件兼容层：L2 加载器隔离补丁 + L3 客户端垫片（polyfill + 全局 CSS）+ L4 安装门禁 doctor",
 	"type": "module",
 	"main": "lib/index.js",
