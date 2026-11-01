@@ -1,0 +1,19 @@
+/* dsh-compat · L3 · perf.css —— 低端机/移动端性能开关（opt-in）
+ *
+ * 只在带 data-dsh-compat-perf="1" 的根元素下生效；该属性由 lib/polyfills.js
+ * 的脚本在 coarse pointer（触屏）设备上设置。桌面端不受影响。
+ * 注：plans 原文脚本设在 <html>、选择器却写 body，两处不一致；这里放宽成
+ * 属性选择器，属性设在 html 或 body 上都能命中。
+ */
+
+/* 弹层模糊是 Android webview 上最贵的合成开销，直接关掉 */
+[data-dsh-compat-perf="1"] * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* 长动画在低端机上是主要掉帧源；时长归零、只播一轮 */
+[data-dsh-compat-perf="1"] * {
+  animation-duration: 0s !important;
+  animation-iteration-count: 1 !important;
+}

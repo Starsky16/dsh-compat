@@ -1,0 +1,12 @@
+# dsh-compat — L3 客户端垫片（纯 host 注入插件）
+#
+# 本文件是 `dsh.bundle.patch` 层（package.json `dsh.bundle.patch` 指向这里）：
+# `dsh plugin --profile <名> add dsh-compat` 看到这份声明后，把 dsh-compat
+# 追加进 profile 的 bundle 栈，loader 按本行的 insert 挂载插件。
+#
+# ⚠️ 只挂 host 半区：本包不得声明 `dsh.client`（无 `./client` 导出，声明 web
+# 平台会在宿主服务端组合期抛 ClientPackageCompositionError）。
+
+- insert:
+    - id: dsh-compat
+      name: dsh-compat

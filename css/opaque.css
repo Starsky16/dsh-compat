@@ -1,0 +1,27 @@
+/* dsh-compat · L3 · opaque.css —— 弹层透底修复
+ *
+ * 根因（2026-11-01 真机核实，比 spike §5 的推测更进一步）：
+ * `--dsw-specific-menu` 与 `--dsw-menu-surface-fill` 在宿主随包 CSS 里
+ * **只有使用、没有定义**——`._media_38jqx_80`（菜单面板）读 specific-menu、
+ * `._material_ri079_21`（菜单材质层）直接读 surface-fill，两个都解析成
+ * transparent ⇒ 弹层完全透底。因此修复是**补上缺失的 token 定义**，
+ * 而不只是改写引用。
+ *
+ * 注入顺序保证：本文件的 style 行落在 boot style 之后（spike §5 实测），
+ * :root 同特异性后写覆盖成立 ⇒ 无需 !important。若未来主题定义了
+ * surface-fill，内联主题 style 在本文件之前，本定义仍会被主题值覆盖链回
+ * 主题 token（var 兜底只在缺定义时生效）。
+ * 深浅色跟随应用自身的做法（boot style 按 prefers-color-scheme 切换）。
+ */
+
+:root {
+  --dsw-menu-surface-fill: #f8f9fa;
+  --dsw-specific-menu: var(--dsw-menu-surface-fill, #f8f9fa);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --dsw-menu-surface-fill: #1f1f23;
+    --dsw-specific-menu: var(--dsw-menu-surface-fill, #1f1f23);
+  }
+}

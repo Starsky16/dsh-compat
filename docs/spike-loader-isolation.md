@@ -66,7 +66,7 @@
 
 - **声明面**：`dsh.client` 支持 `platform` / `inject`（string[]）/ `external`（string[]）/ `immediately`（bool），由 `parseDshClient`（index.js 行 62–76）校验。这是 doctor 可依赖的稳定声明契约。
 - **注入点**：host 侧 `clientModules` 服务构造时 `ctx.on("webserver/index-inject", (table) => table.push(...bootInjections(this.composed)))`（index.js 行 571–573）；webserver 按 index-inject 顺序组装首页。
-- **顺序推论**：客户端插件的 index-inject 监听注册晚于 host 的监听（host 在核心服务构造时注册），cordis 事件按注册序分发 ⇒ **不 `prepend` 的 `table.push` 稳定排在 boot 注入（含主题 style）之后**——后写覆盖，L3 的 opaque.css 无需 `!important` 即可覆盖主题 token（前提：选择器特异性相同或更高）。**此推论是静态推的，动态半场用「装 L3 → curl 首页看 style 顺序 + 截屏」复核后再固化**。
+- **顺序推论**：客户端插件的 index-inject 监听注册晚于 host 的监听（host 在核心服务构造时注册），cordis 事件按注册序分发 ⇒ **不 `prepend` 的 `table.push` 稳定排在 boot 注入（含主题 style）之后**——后写覆盖，L3 的 opaque.css 无需 `!important` 即可覆盖主题 token（前提：选择器特异性相同或更高）。**✅ 已动态固化（2026-11-01 L3 真机冒烟，rc.5-tdsh.4）：boot style → L3 两段 style（后写覆盖成立）→ `<body>` 起始处 polyfill 脚本，与推论一致。**另据冒烟进一步核实：`--dsw-specific-menu` / `--dsw-menu-surface-fill` 在宿主随包 CSS 里只有使用、没有定义（透底根因），L3 已改为补定义而非改引用（见 `css/opaque.css` 头注）。
 - **脚本位置**：boot 脚本走 `table.push(...bootInjections(...))`，主题 `apply()` 用 `prepend: true`；L3 的 polyfill 脚本按 plans 用 `prepend: true` 抢在主题脚本之前，样式不 prepend 排在最后——**与 plans Task 3 Step 4 的设计一致**。
 
 ## 6. L4 doctor 的环境事实（影响判据设计）

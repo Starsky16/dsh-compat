@@ -4,6 +4,11 @@
 	"description": "dsh 插件兼容层：L2 加载器隔离补丁 + L3 客户端垫片（polyfill + 全局 CSS）+ L4 安装门禁 doctor",
 	"type": "module",
 	"main": "lib/index.js",
+	"dsh": {
+		"bundle": {
+			"patch": "./cordis.patch.yml"
+		}
+	},
 	"engines": {
 		"node": ">=24.2"
 	},

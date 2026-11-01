@@ -11,8 +11,8 @@ DeepSeek Harness 插件兼容层：**L2 加载器隔离补丁** + **L3 客户端
 | L4 门禁 `bin/doctor.mjs` | ✅ 可用（2026-10-28） | WIN 实跑 desktop profile 全 PASS；fixture 矩阵全符合 |
 | L2 隔离补丁 `patches/compat/` + `bin/patch.mjs` | ✅ 真机验证（2026-10-31） | A 毒化代理 + `start()` 逐条目 catch + **B2（audit 前清 FAILED 条目）**；三态对照实测通过。Termux 打全局树（`--node-modules`），升级覆盖由 `bin/selfcheck.mjs` 只告警兜底 |
 | T1 加载器勘察（spike） | ✅ 静态 + 动态半场完成 | 报告 `docs/spike-loader-isolation.md`（rc.3 静态 + Termux rc.5 真机） |
-| L3 垫片 `lib/index.js` + `css/` | ⬜ 未落地 | 文件尚未创建，**暂不要把本仓整包装进 profile**（见下方安装说明） |
-| T7 启动自检 `bin/selfcheck.mjs` | 🟡 脚本落地（2026-11-01，只告警） | sha256 校验补丁目标；未打/漂移/缺失时 stderr 告警、退出码恒 0。接线（Termux 包装/启动脚本）待与 termux-dsh 对齐；市场路径仍靠 doctor 手动兜底 |
+| L3 垫片 `lib/index.js` + `css/` | ✅ 真机冒烟通过（2026-11-01） | 纯 host 注入：polyfill 脚本 prepend + 全局 CSS 后写覆盖；含 T7 方案 C 激活自检（只告警）。`dsh.bundle.patch` 已声明，`dsh plugin add` 即挂载 |
+| T7 启动自检 `bin/selfcheck.mjs` | ✅ 接线完成（2026-11-01） | sha256 校验补丁目标；未打/漂移/缺失时 stderr 告警、退出码恒 0。T7B wrapper（termux-dsh `~/bin/dsh`）已接线并真机验证；方案 C 已并入 L3 激活路径（`DSH_COMPAT_DISABLE_L2_SELFCHECK=1` 可关） |
 | Termux 动态半场验证 | ✅ 2026-10-31 | 整页崩复现、doctor 矩阵符合（android→linux PASS）、注入顺序 push；交接见 `workflow-sync/handoff/20261031-dsh-compat-Termux动态半场测试.md` |
 
 > 平台边界：**WIN 只上 L3+L4**——dsh 核心在 `app.asar` 内不可写，L2 加载器补丁不适用。L2 补丁的**归属**按 2026-10-31 D8 结论归本仓（原「归 termux-dsh」是 D8 前旧口径）。**目标树已定**：Termux 打全局树（`--node-modules "$(npm root -g)/dsh-termux/node_modules"`）——实测全新 profile 不物化 `@deepseek-ai/*`，宿主直走全局树（见 `handoff/20261031-dsh-compat-L2补丁真机复验.md`）。
@@ -26,7 +26,23 @@ git clone https://github.com/Starsky16/dsh-compat.git ~/code/dsh-compat
 node ~/code/dsh-compat/bin/doctor.mjs            # 自动探测 $DSH_HOME/profiles/{web,desktop}
 ```
 
-整包作为插件安装（`dsh plugin add`）**要等 L3 落地后**再做：当前 `package.json` 的 `main` 指向尚不存在的 `lib/index.js`，现在安装会得到加载错误。L3 完成后本文档会更新安装步骤。
+## L3 客户端垫片（纯 host 注入）
+
+```bash
+# 安装即挂载：package.json 声明了 dsh.bundle.patch，CLI 会把 dsh-compat 追加进
+# profile 的 bundle 栈，不需要手工改 cordis.patch.yml
+dsh plugin --profile web add ~/code/dsh-compat
+```
+
+组成（plans Task 3，按 2026-11-01 真机结论修订）：
+
+- **`lib/polyfills.js`** → `<script placement="body">`，`{ prepend: true }` 抢在主题脚本之前执行。只补缺失（randomUUID / `AbortSignal.any`，均有原生实现时不覆盖），触屏设备上设置 perf 开关属性。
+- **`css/opaque.css`** → `kind: "style"` 不带 placement、不 prepend，落在 boot style 之后。真机核实：`--dsw-specific-menu` 与 `--dsw-menu-surface-fill` 在宿主随包 CSS 里**只有使用、没有定义**（菜单面板 `._media_38jqx_80` 与材质层 `._material_ri079_21` 都读它们）⇒ 透底根因是缺定义，垫片补上定义并给深色模式变体。
+- **`css/perf.css`** → opt-in：只在 `[data-dsh-compat-perf="1"]` 下生效（触屏才打开），关 backdrop-filter、动画时长归零。
+- **L2 激活自检（T7 方案 C）**：插件 `apply()` 时按 manifest sha256 校验全局树补丁，未打/漂移只 stderr 告警（判据与 `bin/selfcheck.mjs` 一致）；`DSH_COMPAT_NM` 可覆盖目标树，`DSH_COMPAT_DISABLE_L2_SELFCHECK=1` 关闭。
+
+真机冒烟（2026-11-01，rc.5-tdsh.4）：隔离 profile 装 dsh-compat → 首页 6 处注入痕迹；顺序 = boot style → L3 样式（后写覆盖成立）→ body 起始处 polyfill；selfcheck `ready: true`；`npm test` 23/23（原 15 + L3 8）。
+
 
 ## L2 加载器隔离补丁
 
@@ -104,11 +120,17 @@ dsh-compat/
 ├─ bin/doctor.mjs              # L4 安装门禁（可执行）
 ├─ bin/patch.mjs               # L2 补丁管理：check / apply / revert
 ├─ bin/selfcheck.mjs           # L2 启动自检：只告警，不改文件
+├─ lib/index.js                # L3 插件入口：注入接线 + 激活自检（方案 C）
+├─ lib/polyfills.js            # L3 注入脚本：randomUUID / AbortSignal.any / perf 开关
+├─ css/opaque.css              # L3 弹层透底修复（补缺失 token，深浅色）
+├─ css/perf.css                # L3 移动端性能开关（opt-in）
+├─ cordis.patch.yml            # L3 的 dsh.bundle.patch 层（- insert: dsh-compat）
 ├─ patches/compat/             # L2 补丁 + manifest（锁 pristine/patched sha256）
 ├─ compat/known.json           # 逃生口：已核实的人工例外
 ├─ docs/spike-loader-isolation.md  # 0.2.1-rc.3 加载器/契约/市场路径勘察
 ├─ test/fixtures/              # doctor 矩阵 + 运行时 fixture
 ├─ test/patch.test.mjs         # 补丁应用器 / CLI / 自检的单元与端到端测试
+├─ test/l3.test.mjs            # L3 注入契约 / polyfill / 自检 / 包声明测试
 └─ package.json
 ```
 
