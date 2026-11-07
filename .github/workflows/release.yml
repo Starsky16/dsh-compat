@@ -55,6 +55,11 @@ jobs:
           echo "FILE=$FILE" >> "$GITHUB_ENV"
           sha256sum "dist/$FILE" > "dist/$FILE.sha256"
           cat "dist/$FILE.sha256"
+          # 版本无关别名：插件市场条目用 latest/download/dsh-compat.tgz，
+          # 发版后不用改条目（内容随 latest 变，版本号在 package.json 里）。
+          cp "dist/$FILE" "dist/dsh-compat.tgz"
+          sha256sum "dist/dsh-compat.tgz" > "dist/dsh-compat.tgz.sha256"
+          cat "dist/dsh-compat.tgz.sha256"
 
       # 同版本重发 = 先删后建（对齐 termux-dsh repack 的幂等口径）
       - name: Delete existing release
@@ -75,7 +80,11 @@ jobs:
           dsh plugin --profile <名> add ./dsh-compat-*.tgz
 
           - commit: $GITHUB_SHA
+          - 稳定下载链接（latest）：https://github.com/$GITHUB_REPOSITORY/releases/latest/download/dsh-compat.tgz
           - L2 补丁目标与哈希锁定见 patches/compat/manifest.json（base.upstream 标注当前锚定的上游版本）"
-          gh release upload "$TAG" "dist/$FILE" "dist/$FILE.sha256" --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" \
+            "dist/$FILE" "dist/$FILE.sha256" \
+            "dist/dsh-compat.tgz" "dist/dsh-compat.tgz.sha256" \
+            --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
