@@ -96,7 +96,7 @@ node bin/doctor.mjs [profile目录] [--fix] [--dry-run]
 1. `dsh.client.platform` 必须为 `"web"` 才会被宿主装配 client 半区；其他值给出 WARN（预期不加载，不拦）。
 2. client 入口 = `pkg.exports["./client"]`（字符串或 `{default}`）；声明了 `dsh.client` 却缺该导出会在**宿主服务端组合期抛错**，doctor 直接 FAIL。
 3. `os`/`cpu` 声明与当前平台交叉；Android 上 `process.platform === "android"` 按 `linux` 宽容映射。
-4. client bundle 里的裸 specifier 只能命中：前端 staticModules seed 词 / 某个 `platform==="web"` 包的 client 半区（profile 树、Termux 全局树、WIN `app.asar` 模块表）。全部落空即「externals 漂移」，判 FAIL。
+4. client bundle 里的裸 specifier 只能命中：前端 staticModules seed 词 / 某个 `platform==="web"` 包的 client 半区（profile 树、Termux 全局树、WIN `app.asar` 模块表）。全部落空即「externals 漂移」，判 FAIL。扫描前先剥 `//` 与 `/* */` 注释（`lib/specscan.mjs`，字符级扫描并保留字符串/模板/正则字面量）：JSDoc 里 `from "nothing"` 这类散文不再被当成 specifier（2026-11-07 修复）。
 5. 已知例外走 `compat/known.json`（如 try/catch 包裹的旧版回退 require），显示为 `KNOWN` 并附归因。
 
 ### 测试 fixtures

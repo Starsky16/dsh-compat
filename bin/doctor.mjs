@@ -21,6 +21,7 @@ import { readFileSync, existsSync, openSync, readSync, closeSync } from "node:fs
 import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync, spawnSync } from "node:child_process";
+import { bareName, scanSpecs } from "../lib/specscan.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -182,35 +183,7 @@ function reachClientHalf(spec) {
 
 // ─────────────────────────── 静态扫描 ───────────────────────────
 
-/** 从 specifier 取裸包名；相对/别名/带 scheme 的返回 undefined。 */
-function bareName(spec) {
-	if (!spec || spec.startsWith(".") || spec.startsWith("#")) return undefined;
-	if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(spec)) return undefined; // node: cordis: data: …
-	if (spec.startsWith("@")) {
-		const parts = spec.split("/");
-		return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : undefined;
-	}
-	const slash = spec.indexOf("/");
-	return slash === -1 ? spec : spec.slice(0, slash);
-}
-
-/** 覆盖压缩后形态：require("x") / import("x") / from"x" / from 'x'（引号可单可双）。 */
-const SPEC_RE = /(?:\brequire\s*\(\s*|\bimport\s*\(\s*|\bfrom\s*)(["'])([^"'\n]+)\1/g;
-
-/** 合法裸 specifier 的字符集：npm 包名 + 子路径段。错误消息字符串（含空格/花括号/反斜杠等）在此被剔除。 */
-const SPEC_CHARS_RE = /^@?[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
-
-function scanSpecs(source) {
-	const found = new Set();
-	for (const m of source.matchAll(SPEC_RE)) {
-		const spec = m[2];
-		if (bareName(spec) === undefined) continue; // 相对路径 / node: / cordis: 等
-		if (!SPEC_CHARS_RE.test(spec)) continue; // 压缩代码里的字符串不是 specifier
-		found.add(spec);
-	}
-	return found;
-}
-
+/** 扫描前先剥注释：specifier 扫描与注释剥离都在 lib/specscan.mjs（见该文件头注）。 */
 /** npm os/cpu 判定（含 "!linux" 否定语义）。 */
 function platformMatches(list, want) {
 	const neg = list.filter((o) => o.startsWith("!")).map((o) => o.slice(1));
