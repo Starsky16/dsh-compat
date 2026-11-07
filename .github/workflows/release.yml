@@ -75,7 +75,7 @@ jobs:
           dsh plugin --profile <名> add ./dsh-compat-*.tgz
 
           - commit: $GITHUB_SHA
-          - L2 补丁目标与哈希锁定见 patches/compat/manifest.json（dsh 0.2.1-rc.3 / rc.5）"
+          - L2 补丁目标与哈希锁定见 patches/compat/manifest.json（base.upstream 标注当前锚定的上游版本）"
           gh release upload "$TAG" "dist/$FILE" "dist/$FILE.sha256" --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
