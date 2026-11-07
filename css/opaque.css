@@ -1,27 +1,30 @@
-/* dsh-compat · L3 · opaque.css —— 弹层透底修复
+/* dsh-compat · L3 · opaque.css —— 菜单材质：锁定不透明（2026-11-07 定稿）
  *
- * 根因（2026-11-01 真机核实，比 spike §5 的推测更进一步）：
- * `--dsw-specific-menu` 与 `--dsw-menu-surface-fill` 在宿主随包 CSS 里
- * **只有使用、没有定义**——`._media_38jqx_80`（菜单面板）读 specific-menu、
- * `._material_ri079_21`（菜单材质层）直接读 surface-fill，两个都解析成
- * transparent ⇒ 弹层完全透底。因此修复是**补上缺失的 token 定义**，
- * 而不只是改写引用。
+ * 宿主 ui-theme 在 `body` / `body[data-ds-dark-theme]` 上定义
+ * `--dsw-menu-surface-fill` / `--dsw-specific-menu`，值是有意做成毛玻璃的
+ * 半透明色（rc.5：58% / 45%；0.2.2-rc.1：70% / 64%），再配
+ * `--dsw-menu-backdrop-filter: blur(40px) saturate(150%)`。用户裁决：
+ * 半透明不可用，锁定不透明，不做开关（2026-11-07）。
  *
- * 注入顺序保证：本文件的 style 行落在 boot style 之后（spike §5 实测），
- * :root 同特异性后写覆盖成立 ⇒ 无需 !important。若未来主题定义了
- * surface-fill，内联主题 style 在本文件之前，本定义仍会被主题值覆盖链回
- * 主题 token（var 兜底只在缺定义时生效）。
- * 深浅色跟随应用自身的做法（boot style 按 prefers-color-scheme 切换）。
+ * 为什么必须 `!important`：
+ *  - 宿主主题是客户端运行时 append 到 head 的，晚于本文件；
+ *  - 宿主还有 `html[data-platform=darwin] body` 这类更高特异性的覆盖；
+ *  - 若只靠特异性，darwin 上会被压回半透明。
+ * 所以这里对 body（含深色）用 `!important` 直接锁死，顺序/特异性都不再影响。
+ *
+ * 覆盖范围：菜单材质（`._material_*`）、媒体面板（`._media_*`）、菜单分组
+ * 标题底色，以及它们共用的模糊 token。其它 UI 不动。
  */
 
-:root {
-  --dsw-menu-surface-fill: #f8f9fa;
-  --dsw-specific-menu: var(--dsw-menu-surface-fill, #f8f9fa);
+body {
+  --dsw-menu-surface-fill: #f8f9fa !important;
+  --dsw-specific-menu: var(--dsw-menu-surface-fill, #f8f9fa) !important;
+  --dsw-alias-menu-group-header-fill: #f8f9fa !important;
+  --dsw-menu-backdrop-filter: none !important;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --dsw-menu-surface-fill: #1f1f23;
-    --dsw-specific-menu: var(--dsw-menu-surface-fill, #1f1f23);
-  }
+body[data-ds-dark-theme] {
+  --dsw-menu-surface-fill: #303136 !important;
+  --dsw-specific-menu: var(--dsw-menu-surface-fill, #303136) !important;
+  --dsw-alias-menu-group-header-fill: #303136 !important;
 }

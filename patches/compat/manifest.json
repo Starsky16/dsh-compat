@@ -1,11 +1,13 @@
 {
 	"schema": 1,
-	"generated": "2026-10-31",
+	"generated": "2026-11-07",
 	"note": "L2 加载器隔离补丁清单。Termux 生产目标是全局树 $(npm root -g)/dsh-termux/node_modules（用 --node-modules 指定）；profile 树副本若存在也可用 --profile。pristine/patched 哈希任一不匹配即视为漂移，脚本拒绝半套应用。",
 	"base": {
-		"upstream": "0.2.1-rc.5",
-		"verified_against": ["0.2.1-rc.3", "0.2.1-rc.5"],
-		"note": "rc.3 与 rc.5 的 @deepseek-ai/dsh-client-modules/lib/client.js 字节一致（sha256 426084f8…，46292B），同一补丁与哈希可锚定两版；rc.4 及 rc.6+ 未验证，哈希不匹配即拒绝。"
+		"upstream": "0.2.2-rc.1",
+		"verified_against": [
+			"0.2.2-rc.1"
+		],
+		"note": "锚点按 0.2.2-rc.1 重新生成（sha256 74e834b8…，46569B）。0.2.2 在 makeRequire 里新增 seed 分支，rc.5 旧补丁的第三个 hunk 上下文不再匹配 ⇒ rc.3/rc.5 的旧锚点已退役，哈希不匹配即拒绝。"
 	},
 	"targets": [
 		{
@@ -15,9 +17,9 @@
 			"rel": "lib/client.js",
 			"patch": "patches/compat/client-modules-isolate.patch",
 			"create": false,
-			"pristine_sha256": "426084f8672c26a469566a3f43c91a9b0d1dd73d0834028e553a6d0fa9cffa44",
-			"patched_sha256": "21fab6c5ea5f1a2718f6585d467f45f97a9d0dba4e8db605cb4f9c4f6cb536c8",
-			"effect": "A：makeRequire 未命中返回毒化代理（[dsh-compat] 归因，使用即抛）。start() 的 Promise.all 改逐条目 catch。B2：await loader.await() 后、boot audit 前清理 fiber.state===FAILED 的条目——毒化代理把失败从 import 期推迟到激活期，create() 不抛，单靠 catch 捕不到，必须靠 B2 移除。真机三态对照见 workflow-sync/handoff/20261031-dsh-compat-L2补丁真机复验.md。"
+			"pristine_sha256": "74e834b85e44f75874198bb0e937de98fd78c2bc0c5145cc14032185f579731f",
+			"patched_sha256": "37be3ba103508affadd43a0360d0b85b97a913f016e8e5237ce63577a7bf721d",
+			"effect": "A：makeRequire 未命中返回毒化代理（[dsh-compat] 归因，使用即抛）。start() 的 Promise.all 改逐条目 catch。B2：await loader.await() 后、boot audit 前清理 fiber.state===FAILED 的条目——毒化代理把失败从 import 期推迟到激活期，create() 不抛，单靠 catch 捕不到，必须靠 B2 移除。0.2.2-rc.1 锚点复验：正向/反向 applyPatch 均与目标字节一致。"
 		}
 	]
 }

@@ -78,12 +78,12 @@
  					for (const row of this.modules.manifest.modules) this.revisions.set(row.id, row.rev);
  				});
  			}
-@@ -837,7 +897,7 @@
+@@ -839,7 +899,7 @@
  					const record = this.loadCache.get(id);
  					if (record !== void 0) return record.exports;
  					if (this.factories.has(id)) return this.materialize(id).exports;
 -					throw new Error(`client-modules: require("${spec}") missed the module table — not a platform seed word, not a materialized module, and no registered package factory (a build-time externals drift, or a dynamic dependency that did not arrive)`);
 +					return compatMissingModule(spec);
  				};
+ 				require.asset = (reference) => this.resolveAsset(reference);
  				require.async = async (spec) => {
- 					edges.add(spec);

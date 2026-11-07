@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,7 @@ test("POLYFILLS 只补缺失：randomUUID 与 AbortSignal.any 都有守卫", () 
 	// perf 开关走 matchMedia coarse pointer 判定
 	assert.match(POLYFILLS, /pointer:\s*coarse/);
 	assert.match(POLYFILLS, /dshCompatPerf/);
+	assert.ok(!POLYFILLS.includes("dshCompatMenu"), "菜单不透明是锁定行为，脚本不再落切换属性");
 });
 
 test("nodeModuleCandidateRoots：候选根按平台一般化（win 不探测 / PREFIX 优先 / 标准 npm -g 根）", () => {
@@ -115,14 +116,18 @@ test("apply 接线：脚本 prepend、样式不 prepend，行形态符合 rc.5 �
 	assert.match(styleTable[1].text, /data-dsh-compat-perf/, "第二行是 perf.css");
 });
 
-test("opaque.css 补齐缺失 token（两个都要定义）且不依赖 !important", () => {
+test("opaque.css：用 !important 把菜单材质锁死为不透明（宿主后注入 / darwin 高特异性都压得住）", () => {
 	const css = text(join(ROOT, "css", "opaque.css")).replace(/\/\*[\s\S]*?\*\//g, "");
-	// 真机核实（2026-11-01）：specific-menu 与 menu-surface-fill 在宿主 CSS 里只有使用、没有定义
-	assert.match(css, /--dsw-menu-surface-fill:\s*#[0-9a-fA-F]+/);
-	assert.match(css, /--dsw-specific-menu:\s*var\(--dsw-menu-surface-fill/);
-	// 深色模式变体
-	assert.match(css, /prefers-color-scheme:\s*dark/);
-	assert.ok(!css.includes("!important"), "后写覆盖成立时不需要 !important");
+	// 两个 token 都要给不透明值（含深色变体），且都是 !important
+	assert.match(css, /--dsw-menu-surface-fill:\s*#[0-9a-fA-F]+\s*!important/);
+	assert.match(css, /--dsw-specific-menu:\s*var\(--dsw-menu-surface-fill[^;]*!important/);
+	assert.match(css, /body\[data-ds-dark-theme\]\s*\{[^}]*!important/);
+	// 模糊一并关掉（不透明底色下没有意义，还费合成）
+	assert.match(css, /--dsw-menu-backdrop-filter:\s*none\s*!important/);
+	// 不再有属性门控 / :root / 客户端开关残留
+	assert.doesNotMatch(css, /data-dsh-compat-menu/);
+	assert.doesNotMatch(css, /html\[/);
+	assert.doesNotMatch(css, /:root/);
 });
 
 test("perf.css 每条规则都限定在 perf 开关属性下", () => {
@@ -134,15 +139,15 @@ test("perf.css 每条规则都限定在 perf 开关属性下", () => {
 	}
 });
 
-test("包不得声明 client 半区（dsh.client / exports[\"./client\"]），否则宿主组合期抛 ClientPackageCompositionError", () => {
+test("包保持纯 host：不声明 dsh.client / 不给 exports[\"./client\"]（菜单不透明锁定，无设置项）", () => {
 	const pkg = JSON.parse(text(join(ROOT, "package.json")));
 	assert.equal(pkg.main, "lib/index.js");
 	// bundle 层声明是必需的（否则 dsh plugin add 只当普通依赖、不进 loader）
 	assert.equal(pkg.dsh?.bundle?.patch, "./cordis.patch.yml");
-	// 但 client 半区声明绝对不能有：无 ./client 导出却声明 web 平台 = 服务端组合期抛错
+	// 声明了 dsh.client 却没有 ./client 导出 = 宿主服务端组合期抛错；本包两者都没有
 	assert.ok(pkg.dsh?.client === undefined, "不得声明 dsh.client");
-	const exportsMap = pkg.exports ?? {};
-	assert.ok(exportsMap["./client"] === undefined, "不得有 exports[\"./client\"]");
+	assert.ok(pkg.exports?.["./client"] === undefined, "不得有 exports[\"./client\"]");
+	assert.ok(!existsSync(join(ROOT, "lib", "client.js")), "client 半区文件应已移除");
 	// bundle patch 文件存在且是 - insert: 行（挂载 host 半区）
 	const patchText = text(join(ROOT, pkg.dsh.bundle.patch.replace(/^\.\//, "")));
 	assert.match(patchText, /- insert:/);
