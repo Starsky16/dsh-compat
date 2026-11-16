@@ -80,7 +80,7 @@ const rows = [];
 for (const target of manifest.targets) {
 	const info = inspect(target, nodeModules);
 	rows.push({ id: target.id, pkg: target.pkg, rel: target.rel, state: info.state, why: info.why });
-	if (info.state === "patched") continue;
+	if (info.state === "patched" || info.state === "retired") continue;
 	const label =
 		info.state === "skip"
 			? "找不到目标（该 node_modules 下没有这个包）"

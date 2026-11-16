@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { l2Status, hostVersion } from "../lib/l2.mjs";
 import { sha256 } from "../bin/patch.mjs";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** 合成一棵宿主树 + 一份只含 retired 字段的清单。 */
 function fixture(contents, retiredSha) {
@@ -68,5 +72,20 @@ test("hostVersion：从 dsh-termux/package.json 读取", () => {
 		assert.equal(hostVersion(nm), "0.2.2-rc.3-tdsh.2");
 	} finally {
 		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("selfcheck：retired 不计入 issue（CLI 退出 0 且 ready）", () => {
+	const { nm, manifestPath } = fixture("retired");
+	try {
+		const out = spawnSync(
+			process.execPath,
+			[join(ROOT, "bin/selfcheck.mjs"), "--node-modules", nm, "--manifest", manifestPath, "--json"],
+			{ encoding: "utf8" },
+		);
+		const report = JSON.parse(out.stdout);
+		assert.equal(report.ready, true);
+	} finally {
+		rmSync(nm, { recursive: true, force: true });
 	}
 });

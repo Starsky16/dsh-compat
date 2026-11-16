@@ -154,15 +154,15 @@ test("包保持纯 host：不声明 dsh.client / 不给 exports[\"./client\"]（
 	assert.match(patchText, /id: dsh-compat/);
 });
 
-test("l2Selfcheck：缺失 / pristine / patched 三态（合成夹具）", () => {
+test("l2Selfcheck：缺失 / pristine / patched / retired 四态（合成夹具）", () => {
 	const target = MANIFEST.targets[0];
 	const nm = mkdtempSync(join(tmpdir(), "dsh-compat-l3-"));
 	const manifestPath = join(nm, "manifest.json");
-	const clientFile = join(nm, target.pkg, target.rel);
 	try {
 		// 合成清单：rel 指向合成文件，哈希对换成合成字节的已知值
 		const pristineBytes = "dsh-compat-fixture-pristine\n";
 		const patchedBytes = "dsh-compat-fixture-patched\n";
+		const retiredBytes = "dsh-compat-fixture-retired\n";
 		writeFileSync(
 			manifestPath,
 			JSON.stringify({
@@ -172,6 +172,7 @@ test("l2Selfcheck：缺失 / pristine / patched 三态（合成夹具）", () =>
 					rel: "lib/dummy.js",
 					pristine_sha256: sha256(pristineBytes),
 					patched_sha256: sha256(patchedBytes),
+					retired: { upstream: "0.2.2-rc.3", sha256: sha256(retiredBytes) },
 				}],
 			}),
 		);
@@ -194,7 +195,13 @@ test("l2Selfcheck：缺失 / pristine / patched 三态（合成夹具）", () =>
 		writeFileSync(dummy, patchedBytes);
 		r = l2Selfcheck(nm, manifestPath);
 		assert.deepEqual(r.issues, []);
+
+		// retired → 无问题（上游已无需补丁）
+		writeFileSync(dummy, retiredBytes);
+		r = l2Selfcheck(nm, manifestPath);
+		assert.deepEqual(r.issues, []);
 	} finally {
 		rmSync(nm, { recursive: true, force: true });
 	}
 });
+
