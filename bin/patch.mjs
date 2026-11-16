@@ -146,6 +146,9 @@ export function inspect(target, nodeModules) {
 	}
 	const file = realpathSync(pkgFile);
 	const got = sha256(readFileSync(file, "utf8"));
+	if (target.retired !== undefined && got === target.retired.sha256) {
+		return { state: "retired", why: `上游 ${target.retired.upstream} 已无需补丁（退役）`, file, got };
+	}
 	if (got === target.pristine_sha256) return { state: "pristine", why: "pristine", file, got };
 	if (got === target.patched_sha256) return { state: "patched", why: "patched", file, got };
 	return { state: "drift", why: `drift (sha256=${got})`, file, got };
@@ -163,7 +166,7 @@ function backupPath(file) {
 
 function applyOne(target, nodeModules, allowDrift) {
 	const info = inspect(target, nodeModules);
-	if (info.state === "skip" || info.state === "patched") return info;
+	if (info.state === "skip" || info.state === "patched" || info.state === "retired") return info;
 	if (info.state === "drift" && !allowDrift) throw new Error(`漂移，拒绝打补丁：${target.pkg}/${target.rel}（${info.why}）`);
 	if (info.state === "create") throw new Error(`create 目标尚未支持：${target.pkg}/${target.rel}`);
 	const patchText = readFileSync(patchPath(target), "utf8");
@@ -184,7 +187,7 @@ function applyOne(target, nodeModules, allowDrift) {
 
 function revertOne(target, nodeModules, allowDrift) {
 	const info = inspect(target, nodeModules);
-	if (info.state === "skip" || info.state === "pristine") return info;
+	if (info.state === "skip" || info.state === "pristine" || info.state === "retired") return info;
 	if (info.state === "drift") {
 		if (!allowDrift) throw new Error(`漂移，拒绝回滚：${target.pkg}/${target.rel}（${info.why}）`);
 		// 强制打过的文件没有可校验的 patched 哈希，优先用打补丁前的 .orig 原样恢复。
@@ -213,6 +216,7 @@ const LABELS = {
 	create: "create",
 	pristine: "patch ",
 	patched: "ok    ",
+	retired: "retire",
 	drift: "DRIFT "
 };
 
@@ -298,7 +302,7 @@ function main() {
 			rows.push({ id: target.id, pkg: target.pkg, rel: target.rel, state: info.state, why: info.why });
 			if (info.state === "drift") drifted++;
 			if (info.state === "pristine" || info.state === "create") todo++;
-			if (info.state === "patched") done++;
+			if (info.state === "patched" || info.state === "retired") done++;
 		} catch (error) {
 			rows.push({ id: target.id, pkg: target.pkg, rel: target.rel, state: "error", why: error.message });
 			drifted++;
