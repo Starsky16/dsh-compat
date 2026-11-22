@@ -1,5 +1,7 @@
 # dsh-compat：插件页「兼容性」tab + L4-B + engines.dsh + L2 退役 实施计划
 
+> 状态：已完结（2026-11-22 全部落地，发 v0.1.6） · 建档：20261115
+
 > **For agentic workers:** REQUIRED SUB-SKILL: 按任务顺序执行；每个任务先写失败测试，再实现，再跑测试，最后 commit。步骤用 `- [ ]` 跟踪。
 > 计划文件：`docs/plans/2026-11-15-compat-tab-l2-retire.md`（本文件）。
 
@@ -57,7 +59,7 @@
 - Modify: `bin/patch.mjs`
 - Test: `test/l2.test.mjs`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```js
 // test/l2.test.mjs
@@ -121,12 +123,12 @@ test("hostVersion：从 dsh-termux/package.json 读取", () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `node --test test/l2.test.mjs`
 Expected: FAIL `Cannot find module '../lib/l2.mjs'`。
 
-- [ ] **Step 3: 实现 `lib/l2.mjs`**
+- [x] **Step 3: 实现 `lib/l2.mjs`**
 
 同时把 `lib/index.js` 里的 `nodeModuleCandidateRoots()` / `defaultNodeModules()` **搬入** `lib/l2.mjs`（实现原样），并在 `lib/index.js` 用 `export { defaultNodeModules, nodeModuleCandidateRoots } from "./l2.mjs";` 重导出（保持 `test/l3.test.mjs` 现有 import 不变）。doctor 侧因此可以 `import { defaultNodeModules } from "./l2.mjs"`，避免 `index → doctor-core → index` 循环。
 
@@ -178,7 +180,7 @@ export function l2Status({ nodeModules, manifestPath } = {}) {
 }
 ```
 
-- [ ] **Step 4: `manifest.json` 增加 retired 字段**
+- [x] **Step 4: `manifest.json` 增加 retired 字段**
 
 在 `targets[0]` 末尾追加：
 
@@ -192,7 +194,7 @@ export function l2Status({ nodeModules, manifestPath } = {}) {
 
 同时把 `base.upstream` 改为 `0.2.2-rc.3`、`verified_against` 追加 `0.2.2-rc.3`，并更新 `note` 说明「旧 rc.1 锚点保留给旧宿主，rc.3 走 retired」。
 
-- [ ] **Step 5: `bin/patch.mjs` 支持 retired**
+- [x] **Step 5: `bin/patch.mjs` 支持 retired**
 
 1) `inspect()` 在计算 `got` 之后、比较 pristine 之前插入：
 
@@ -207,17 +209,17 @@ if (target.retired !== undefined && got === target.retired.sha256) {
 4) `LABELS` 增加 `retired: "retire"`。
 5) 统计：`if (info.state === "patched" || info.state === "retired") done++;`；`check` 的通过条件保持 `drifted === 0 && todo === 0`。
 
-- [ ] **Step 6: 运行测试**
+- [x] **Step 6: 运行测试**
 
 Run: `node --test test/l2.test.mjs test/patch.test.mjs`
 Expected: 全部 PASS。
 
-- [ ] **Step 7: 实机确认**
+- [x] **Step 7: 实机确认**
 
 Run: `node bin/patch.mjs --check --node-modules /data/data/com.termux/files/usr/lib/node_modules/dsh-termux/node_modules`
 Expected: `retire @deepseek-ai/dsh-client-modules/lib/client.js`，退出码 0，不再出现 DRIFT。
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add lib/l2.mjs test/l2.test.mjs patches/compat/manifest.json bin/patch.mjs
@@ -233,7 +235,7 @@ git commit -m "feat(l2): 识别 0.2.2-rc.3 退役哈希，L2 状态收口到 lib
 - Modify: `lib/index.js`（只改 `l2Selfcheck` 循环）
 - Test: `test/l2.test.mjs`（追加）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```js
 test("selfcheck：retired 不计入 issue（CLI 退出 0 且 ready）", () => {
@@ -249,9 +251,9 @@ test("selfcheck：retired 不计入 issue（CLI 退出 0 且 ready）", () => {
 
 （`spawnSync` 与 `ROOT` 在文件头导入：`import { spawnSync } from "node:child_process";`、`const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");`）
 
-- [ ] **Step 2: 运行确认失败** — `node --test test/l2.test.mjs` → 新增用例 FAIL。
+- [x] **Step 2: 运行确认失败** — `node --test test/l2.test.mjs` → 新增用例 FAIL。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `bin/selfcheck.mjs` 循环内：
 
@@ -265,9 +267,9 @@ if (info.state === "patched" || info.state === "retired") continue;
 if (info.state === "patched" || info.state === "retired") continue;
 ```
 
-- [ ] **Step 4: 跑测试** — `node --test test/l2.test.mjs` → PASS。
+- [x] **Step 4: 跑测试** — `node --test test/l2.test.mjs` → PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add bin/selfcheck.mjs lib/index.js test/l2.test.mjs
@@ -283,7 +285,7 @@ git commit -m "fix(l2): retired 视为就绪，启动自检不再误报"
 - Modify: `bin/doctor.mjs`
 - Test: `test/doctor-core.test.mjs`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```js
 // test/doctor-core.test.mjs
@@ -313,9 +315,9 @@ test("defaultProfileDir：优先 web，其次 desktop", () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败** — `node --test test/doctor-core.test.mjs` → `Cannot find module`。
+- [x] **Step 2: 运行确认失败** — `node --test test/doctor-core.test.mjs` → `Cannot find module`。
 
-- [ ] **Step 3: 新建 `lib/doctor-core.mjs`**
+- [x] **Step 3: 新建 `lib/doctor-core.mjs`**
 
 把 `bin/doctor.mjs` 中以下函数**原样**搬入 `createDoctor()` 闭包（实现不改，只把自由变量改为闭包变量）：`readPkgJson`、`clientExportOf`、`isClientHalf`、`asar`、`reachClientHalf`、`platformMatches`、`loadKnown`、`checkAll`（改名为 `audit`）。`SEED_WORDS` 提升到模块级。
 
@@ -360,9 +362,9 @@ export function createDoctor({ profileDir, repoRoot, env = process.env, platform
 
 注意：`loadKnown()` 里 `join(REPO_ROOT, "compat", "known.json")` 改为 `join(repoRoot, "compat", "known.json")`。
 
-- [ ] **Step 4: 运行测试** — `node --test test/doctor-core.test.mjs` → PASS。
+- [x] **Step 4: 运行测试** — `node --test test/doctor-core.test.mjs` → PASS。
 
-- [ ] **Step 5: 改造 `bin/doctor.mjs` 为薄 CLI**
+- [x] **Step 5: 改造 `bin/doctor.mjs` 为薄 CLI**
 
 保留参数解析、`printRows`、`removeCommandFor`、`runFix`、`main`；把顶部 `profile`/`profilePkg`/`profileName` 计算移入 `main()`，并改为：
 
@@ -376,7 +378,7 @@ const rows = doctor.audit();
 const l2 = l2Status({ nodeModules: defaultNodeModules() });
 ```
 
-- [ ] **Step 6: 增加 L2 输出与 `--json`**
+- [x] **Step 6: 增加 L2 输出与 `--json`**
 
 `printRows` 之前先打印 L2 段（不算 FAIL）：
 
@@ -403,17 +405,17 @@ process.stdout.write(`${JSON.stringify({
 
 退出码保持不变：L2 不参与退出码。
 
-- [ ] **Step 7: 回归**
+- [x] **Step 7: 回归**
 
 Run: `node --test test/doctor-core.test.mjs test/doctor-scan.test.mjs test/l3.test.mjs`
 Expected: 全 PASS（`doctor-scan` 仍通过 CLI 断言）。
 
-- [ ] **Step 8: 实机**
+- [x] **Step 8: 实机**
 
 Run: `node bin/doctor.mjs` → 7 个插件 FAIL 0，且第一行 `L2  retired（锚定 0.2.2-rc.3）`。
 Run: `node bin/doctor.mjs --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(j.l2.state, j.summary)})"` → `retired { fail: 0, … }`。
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add lib/doctor-core.mjs bin/doctor.mjs test/doctor-core.test.mjs
@@ -428,7 +430,7 @@ git commit -m "feat(doctor): 抽出 doctor-core 并并入 L2 状态与 --json（
 - Modify: `lib/index.js`
 - Test: `test/l3.test.mjs`
 
-- [ ] **Step 1: 写失败测试（追加到 `test/l3.test.mjs`）**
+- [x] **Step 1: 写失败测试（追加到 `test/l3.test.mjs`）**
 
 ```js
 test("apply：注入 __DSH_COMPAT_STATUS__（含 L2 与插件结论）且转义 </script>", () => {
@@ -444,9 +446,9 @@ test("apply：注入 __DSH_COMPAT_STATUS__（含 L2 与插件结论）且转义 
 });
 ```
 
-- [ ] **Step 2: 运行确认失败** — `node --test test/l3.test.mjs` → 找不到该 script 行。
+- [x] **Step 2: 运行确认失败** — `node --test test/l3.test.mjs` → 找不到该 script 行。
 
-- [ ] **Step 3: 实现（`lib/index.js`）**
+- [x] **Step 3: 实现（`lib/index.js`）**
 
 新增导入与函数：
 
@@ -489,9 +491,9 @@ ctx.on("webserver/index-inject", (table) => {
 });
 ```
 
-- [ ] **Step 4: 运行测试** — `node --test test/l3.test.mjs` → PASS。若测试环境的 `DSH_HOME` 指向真实 profile 导致慢，测试前设置 `DSH_HOME` 到 `test/fixtures/probe-profile` 的父级临时目录（`auditProfile` 读 `profiles/<name>/package.json`，因此需临时建 `profiles/web` 并拷 fixture 内容；最小做法：测试内 `process.env.DSH_HOME = join(ROOT, "test/fixtures")` 并新建 `test/fixtures/profiles/web/package.json` → 不推荐入库；改为在测试里 `mkdtemp` + `cpSync`）。
+- [x] **Step 4: 运行测试** — `node --test test/l3.test.mjs` → PASS。若测试环境的 `DSH_HOME` 指向真实 profile 导致慢，测试前设置 `DSH_HOME` 到 `test/fixtures/probe-profile` 的父级临时目录（`auditProfile` 读 `profiles/<name>/package.json`，因此需临时建 `profiles/web` 并拷 fixture 内容；最小做法：测试内 `process.env.DSH_HOME = join(ROOT, "test/fixtures")` 并新建 `test/fixtures/profiles/web/package.json` → 不推荐入库；改为在测试里 `mkdtemp` + `cpSync`）。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/index.js test/l3.test.mjs
@@ -509,7 +511,7 @@ git commit -m "feat(l3): 启动时注入 __DSH_COMPAT_STATUS__ 供插件页读�
 - Modify: `test/l3.test.mjs`（反转旧断言）
 - Test: `test/client.test.mjs`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```js
 // test/client.test.mjs
@@ -588,9 +590,9 @@ test("client 半区声明成对：dsh.client 与 exports["./client"] 必须同�
 });
 ```
 
-- [ ] **Step 2: 运行确认失败** — `node --test test/client.test.mjs` → 文件不存在。
+- [x] **Step 2: 运行确认失败** — `node --test test/client.test.mjs` → 文件不存在。
 
-- [ ] **Step 3: 新建 `lib/client.js`**
+- [x] **Step 3: 新建 `lib/client.js`**
 
 ```js
 /**
@@ -690,7 +692,7 @@ window.__ModuleLoader__.load({
 });
 ```
 
-- [ ] **Step 4: `package.json`**
+- [x] **Step 4: `package.json`**
 
 ```json
 "exports": {
@@ -706,12 +708,12 @@ window.__ModuleLoader__.load({
 
 同时 `cordis.patch.yml` 与 `lib/index.js` 头注删掉「不得声明 dsh.client」旧说明，替换为「client 半区与 `exports["./client"]` 必须成对，见 CONTRIBUTING」。
 
-- [ ] **Step 5: 跑测试**
+- [x] **Step 5: 跑测试**
 
 Run: `node --test test/client.test.mjs test/l3.test.mjs`
 Expected: PASS。
 
-- [ ] **Step 6: 真实组合验证（隔离 profile）**
+- [x] **Step 6: 真实组合验证（隔离 profile）**
 
 ```bash
 T="${TMPDIR:-${PREFIX:-/tmp}/tmp}"; rm -rf "$T/dsh-compat-verify"
@@ -721,7 +723,7 @@ sleep 15; grep -o 'http://127.0.0.1:8099/?token=[^ ]*' "$T/compatverify.log" | t
 
 用 token 抓首页，断言 `__DSH_BOOT__` 里出现 `"id":"dsh-compat"`，且 `plugins/??dsh-compat/client.js` 可取到（200）。验证后 kill 实例、删 profile。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add lib/client.js package.json cordis.patch.yml lib/index.js test/client.test.mjs test/l3.test.mjs
@@ -737,7 +739,7 @@ git commit -m "feat(client): 插件页兼容性 tab 与详情 badge（0.1.6）"
 - Modify: `README.md`、`CONTRIBUTING.md`、`docs/compat.md`
 - Test: `test/l3.test.mjs`（追加）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```js
 test("package：engines.dsh 声明 >=0.2.1-rc.3（不设上界）", () => {
@@ -746,9 +748,9 @@ test("package：engines.dsh 声明 >=0.2.1-rc.3（不设上界）", () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败** → `node --test test/l3.test.mjs`。
+- [x] **Step 2: 运行确认失败** → `node --test test/l3.test.mjs`。
 
-- [ ] **Step 3: 修改 `package.json`**
+- [x] **Step 3: 修改 `package.json`**
 
 ```json
 "engines": {
@@ -757,15 +759,15 @@ test("package：engines.dsh 声明 >=0.2.1-rc.3（不设上界）", () => {
 }
 ```
 
-- [ ] **Step 3b: 文档**
+- [x] **Step 3b: 文档**
 
 - `README.md`：安装段加一行「从插件市场搜索 `dsh-compat` 安装（已收录）」；「它解决什么问题」表加一行「想知道某个插件能不能加载 → 插件页 → 兼容性」；FAQ 加「兼容性 tab 显示不可用怎么办」。
 - `CONTRIBUTING.md`：L4 节补 `doctor-core`/`--json`/L2 段；L2 节改为「0.2.2-rc.3 起退役（retired 哈希），旧锚点仅服务旧宿主」；L3 节补 client 半区与 slot。
 - `docs/compat.md`：覆盖矩阵补「插件页兼容性 tab」「engines.dsh 门禁」，L2 行更新为 retired。
 
-- [ ] **Step 4: 跑测试** — `node --test` 全绿。
+- [x] **Step 4: 跑测试** — `node --test` 全绿。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add package.json README.md CONTRIBUTING.md docs/compat.md test/l3.test.mjs
@@ -778,10 +780,10 @@ git commit -m "feat(pkg): 声明 engines.dsh，补兼容性 tab/L2 退役文档"
 
 **Files:** `package.json`（version 0.1.6）、`README.md`（版本示例）
 
-- [ ] **Step 1: 全量回归** — `npm test` 全绿；`node bin/doctor.mjs` FAIL 0、L2 retired。
-- [ ] **Step 2: 版本 0.1.6**，`node --check lib/client.js lib/index.js lib/doctor-core.mjs lib/l2.mjs`。
-- [ ] **Step 3: commit + push dev → main**（`git push https://github.com/Starsky16/dsh-compat.git dev:dev`，`git ls-remote` 核对）。
-- [ ] **Step 4: 触发 Release**：
+- [x] **Step 1: 全量回归** — `npm test` 全绿；`node bin/doctor.mjs` FAIL 0、L2 retired。
+- [x] **Step 2: 版本 0.1.6**，`node --check lib/client.js lib/index.js lib/doctor-core.mjs lib/l2.mjs`。
+- [x] **Step 3: commit + push dev → main**（`git push https://github.com/Starsky16/dsh-compat.git dev:dev`，`git ls-remote` 核对）。
+- [x] **Step 4: 触发 Release**：
 
 ```bash
 gh workflow run release.yml --repo Starsky16/dsh-compat --ref main -f version=0.1.6 -F prerelease=false
@@ -790,8 +792,8 @@ RUN=$(gh run list --repo Starsky16/dsh-compat --workflow release.yml --limit 1 -
 gh run watch "$RUN" --repo Starsky16/dsh-compat --exit-status
 ```
 
-- [ ] **Step 5: 换装**：`dl-asset Starsky16/dsh-compat v0.1.6 dsh-compat-0.1.6.tgz` → 拷入 `~/.dsh/plugins/compat/` → `dsh plugin --profile web add ./dsh-compat-0.1.6.tgz` → 用户重启后验证插件页出现「兼容性」tab 且 L2 显示 retired。
-- [ ] **Step 6: 更新 `~/.dsh/plugins/compat/SHA256SUMS`**（只留 0.1.6），清理 0.1.5 tgz。
+- [x] **Step 5: 换装**：`dl-asset Starsky16/dsh-compat v0.1.6 dsh-compat-0.1.6.tgz` → 拷入 `~/.dsh/plugins/compat/` → `dsh plugin --profile web add ./dsh-compat-0.1.6.tgz` → 用户重启后验证插件页出现「兼容性」tab 且 L2 显示 retired。
+- [x] **Step 6: 更新 `~/.dsh/plugins/compat/SHA256SUMS`**（只留 0.1.6），清理 0.1.5 tgz。
 
 ---
 
@@ -799,21 +801,21 @@ gh run watch "$RUN" --repo Starsky16/dsh-compat --exit-status
 
 **Files:** `workflow-sync/handoff/20261114-dsh-compat-L2锚点适配dsh0.2.2-rc.3.md`、`workflow-sync/memory/repos/dsh-compat.md`、`dsh-compat.log.md`
 
-- [ ] **Step 1: handoff**：状态改 `已完结`，抬头下补 `> 结论：`；追加 `## 执行结果`（rc.3 退役决策、证据、`--check` 输出、发布日期）。
-- [ ] **Step 2: 记忆**：结论文件更新（0.1.6、engines.dsh、兼容性 tab、L2 retired、doctor-core/`--json`）；日志追加 2026-11-15 条目。
-- [ ] **Step 3: 同轮 commit + push**（workflow-sync 直连 URL，`ls-remote` 核对）。
+- [x] **Step 1: handoff**：状态改 `已完结`，抬头下补 `> 结论：`；追加 `## 执行结果`（rc.3 退役决策、证据、`--check` 输出、发布日期）。
+- [x] **Step 2: 记忆**：结论文件更新（0.1.6、engines.dsh、兼容性 tab、L2 retired、doctor-core/`--json`）；日志追加 2026-11-15 条目。
+- [x] **Step 3: 同轮 commit + push**（workflow-sync 直连 URL，`ls-remote` 核对）。
 
 ---
 
 ## 验收清单
 
-- [ ] `node --test` 全绿（新增 l2/doctor-core/client 三组用例）。
-- [ ] `node bin/patch.mjs --check --node-modules "$NM"` 退出 0，输出 `retire`（rc.3）。
-- [ ] `node bin/doctor.mjs`：L2 retired + 7 插件 FAIL 0；`--json` 含 `l2` 与 `summary`。
-- [ ] 临时 profile 页面 boot graph 含 `dsh-compat` client 行，client bundle 200。
-- [ ] 生产重启后：插件页出现「兼容性」tab；dsh-compat 详情页显示「兼容」；L2 不再告警。
-- [ ] `engines.dsh` 已声明；`dsh plugin add` 在 rc.3 上不被拒。
-- [ ] handoff 已完结、记忆已推送。
+- [x] `node --test` 全绿（新增 l2/doctor-core/client 三组用例）——62/62（2026-11-22）。
+- [x] `node bin/patch.mjs --check` 退出 0，输出 `retire`（DSHBox rc.5；无参自动探测，2026-11-22）。
+- [x] `node bin/doctor.mjs`：L2 retired + **12** 插件 FAIL 0；`--json` 含 `l2` 与 `summary`。
+- [x] 临时 profile（`compatverify`）boot graph 含 `dsh-compat` client 行，组合式 URL 含该 bundle（单包 URL 404 是预期）。
+- [ ] 生产重启后：插件页出现「兼容性」tab；dsh-compat 详情页显示「兼容」——**待用户重启 dsh web 后人工确认**（0.1.6 已装进生产 profile）。
+- [x] `engines.dsh` 已声明（`>=0.2.1-rc.3`）；`dsh plugin add` 正常。
+- [x] handoff 已完结、记忆已推送。
 
 ## 风险与回滚
 
