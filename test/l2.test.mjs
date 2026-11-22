@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { candidateNodeModules, defaultNodeModules, l2Status, hostVersion } from "../lib/l2.mjs";
+import { candidateNodeModules, candidateNodeModulesList, defaultNodeModules, l2Status, hostVersion } from "../lib/l2.mjs";
 import { sha256 } from "../bin/patch.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -164,12 +164,13 @@ test("candidateNodeModules：WIN 桌面端仍不探测（app.asar 不可写）",
 	assert.equal(candidateNodeModules({}, { platform: "win32" }), null);
 });
 
-test("defaultNodeModules：本进程环境能自动找到宿主树（DSHBox / Termux 实况）", () => {
-	// 这条不 mock：跑在真机上时必须命中，否则 L2 自检与 doctor 会静默失效
-	const nm = defaultNodeModules();
-	if (process.env.DSH_COMPAT_DISABLE_L2_SELFCHECK === "1") return;
-	assert.ok(nm, "必须自动探测到宿主 node_modules（DSH_INSTALL_DIR / PREFIX / argv / 标准根）");
-	assert.ok(existsSync(join(nm, "@deepseek-ai", "dsh-client-modules")), `${nm} 下应有 @deepseek-ai/dsh-client-modules`);
+test("defaultNodeModules：机器上真有 dsh 宿主树时必须自动命中（否则静默跳过）", (t) => {
+	// 判据：候选里存在含 @deepseek-ai/dsh-client-modules 的目录 ⇒ 探测必须命中它。
+	// 没有任何 dsh 安装的机器（如 CI）没有这个前提，直接跳过，避免把环境差异当缺陷。
+	if (process.env.DSH_COMPAT_DISABLE_L2_SELFCHECK === "1") return t.skip("自检已关闭");
+	const expected = candidateNodeModulesList().find((dir) => existsSync(join(dir, "@deepseek-ai", "dsh-client-modules")));
+	if (!expected) return t.skip("本机没有 dsh 宿主树");
+	assert.equal(defaultNodeModules(), expected);
 });
 
 test("selfcheck：retired 不计入 issue（CLI 退出 0 且 ready）", () => {
