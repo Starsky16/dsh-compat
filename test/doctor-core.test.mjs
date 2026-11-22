@@ -62,7 +62,7 @@ test("hostTreeDirs：显式 DSH_GLOBAL_TREE 优先且仍保留自动探测结果
 	assert.equal(doctor.hostTrees[0], "/custom/nm");
 });
 
-test("defaultProfileDir：DSH_PROFILE_DIR 优先（非 web/desktop 的自定义 profile 名）", () => {
+test("defaultProfileDir：DSH_PROFILE_DIR 兜底（非 web/desktop 的自定义 profile 名）", () => {
 	const root = mkdtempSync(join(tmpdir(), "dsh-prof-"));
 	try {
 		const dir = join(root, "profiles", "compatverify");
@@ -92,6 +92,33 @@ test("defaultProfileDir：都不存在时回落到 DSH_HOME/profiles/web（不�
 	const root = mkdtempSync(join(tmpdir(), "dsh-prof3-"));
 	try {
 		assert.equal(defaultProfileDir({ DSH_HOME: root }), join(root, "profiles", "web"));
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("defaultProfileDir：DSH_PROFILE 与 DSH_PROFILE_DIR 冲突时，以实际存在的 profile 名为准", () => {
+	// 宿主可能把 DSH_PROFILE_DIR 硬设为生产 profile，而命令行 --profile 指定的是另一个。
+	// 判据：DSH_PROFILE 指定的目录存在且清单里的名字与它一致 ⇒ 用它。
+	const root = mkdtempSync(join(tmpdir(), "dsh-prof-conflict-"));
+	try {
+		const prod = join(root, "profiles", "web");
+		const tmp = join(root, "profiles", "compatverify");
+		for (const [dir, name] of [[prod, "dsh-profile-web"], [tmp, "dsh-profile-compatverify"]]) {
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(join(dir, "package.json"), JSON.stringify({ name }));
+		}
+		// 冲突：DSH_PROFILE_DIR 指向生产，DSH_PROFILE 说 compatverify
+		assert.equal(
+			defaultProfileDir({ DSH_HOME: root, DSH_PROFILE: "compatverify", DSH_PROFILE_DIR: prod }),
+			tmp,
+			"DSH_PROFILE 指定的 profile 存在时，应压过被硬设的 DSH_PROFILE_DIR",
+		);
+		// 不冲突时 DSH_PROFILE_DIR 仍然最准（它就是当前 profile 的绝对路径）
+		assert.equal(
+			defaultProfileDir({ DSH_HOME: root, DSH_PROFILE_DIR: prod }),
+			prod,
+		);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

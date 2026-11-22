@@ -262,3 +262,51 @@ test("compatStatusScript：可强制刷新（安装插件后想看最新结论�
 	compatStatusScript({ nodeModules: "/a", createDoctor: fakeDoctor, refresh: true });
 	assert.equal(calls, 2);
 });
+
+test("profileFingerprint：随 profile 清单变化而变（安装/卸载插件后能察觉）", async () => {
+	const { profileFingerprint } = await import("../lib/index.js");
+	const root = mkdtempSync(join(tmpdir(), "dsh-fp-"));
+	try {
+		const dir = join(root, "profiles", "web");
+		mkdirSync(dir, { recursive: true });
+		const pkg = join(dir, "package.json");
+		writeFileSync(pkg, JSON.stringify({ name: "p", dependencies: { a: "1" } }));
+		const first = profileFingerprint(dir);
+		assert.equal(typeof first, "string");
+		assert.equal(profileFingerprint(dir), first, "未变时应稳定");
+		// 模拟市场装插件：内容 + mtime 变化
+		writeFileSync(pkg, JSON.stringify({ name: "p", dependencies: { a: "1", b: "2" } }));
+		await new Promise((r) => setTimeout(r, 12));
+		writeFileSync(pkg, JSON.stringify({ name: "p", dependencies: { a: "1", b: "2", c: "3" } }));
+		assert.notEqual(profileFingerprint(dir), first, "清单变了指纹必须变");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("profileFingerprint：清单不存在时返回稳定占位（不抛错）", async () => {
+	const { profileFingerprint } = await import("../lib/index.js");
+	assert.equal(typeof profileFingerprint("/nonexistent/profile"), "string");
+});
+
+test("compatStatusScript：profile 清单变更后自动重算（不靠手动 refresh）", () => {
+	clearCompatStatusCache();
+	const root = mkdtempSync(join(tmpdir(), "dsh-inv-"));
+	try {
+		const dir = join(root, "profiles", "web");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "p", dependencies: {} }));
+		let calls = 0;
+		const fakeDoctor = () => ({ audit: () => { calls++; return []; } });
+		const opts = { env: { DSH_PROFILE_DIR: dir }, nodeModules: "/x", createDoctor: fakeDoctor };
+		compatStatusScript(opts);
+		compatStatusScript(opts);
+		assert.equal(calls, 1, "清单未变应命中缓存");
+		// 模拟市场装了一个插件
+		writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "p", dependencies: { "new-plugin": "1.0.0" } }));
+		compatStatusScript(opts);
+		assert.equal(calls, 2, "清单变了必须重算");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
