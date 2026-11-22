@@ -22,10 +22,14 @@
 	"dsh": {
 		"bundle": {
 			"patch": "./cordis.patch.yml"
+		},
+		"client": {
+			"platform": "web"
 		}
 	},
 	"engines": {
-		"node": ">=24.2"
+		"node": ">=24.2",
+		"dsh": ">=0.2.1-rc.3"
 	},
 	"bin": {
 		"dsh-compat-doctor": "bin/doctor.mjs",
@@ -38,5 +42,14 @@
 		"selfcheck": "node bin/selfcheck.mjs",
 		"test": "node --test \"test/*.test.mjs\""
 	},
-	"license": "MIT"
+	"license": "MIT",
+	"exports": {
+		".": {
+			"default": "./lib/index.js"
+		},
+		"./client": {
+			"default": "./lib/client.js"
+		},
+		"./package.json": "./package.json"
+	}
 }
