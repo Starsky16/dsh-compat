@@ -27,7 +27,7 @@
 dsh plugin --profile <你的profile名> add https://github.com/Starsky16/dsh-compat.git
 
 # ② 锁定版本：从 https://github.com/Starsky16/dsh-compat/releases 下载 .tgz 后
-dsh plugin --profile <你的profile名> add ./dsh-compat-0.1.5.tgz
+dsh plugin --profile <你的profile名> add ./dsh-compat-0.1.6.tgz
 
 # ③ 本地开发：clone 后指向目录
 git clone https://github.com/Starsky16/dsh-compat.git
