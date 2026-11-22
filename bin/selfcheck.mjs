@@ -18,6 +18,7 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { candidateNodeModules } from "../lib/host-tree.mjs";
 import { expandHome, inspect, readManifest, resolveProfile } from "./patch.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -62,10 +63,15 @@ for (let i = 0; i < args.length; i++) {
 	}
 }
 
+// 显式参数优先：--node-modules > --profile > 自动探测宿主树。
+const detected = nodeModulesArg === undefined && profileArg === undefined ? candidateNodeModules() : null;
 const nodeModules =
-	nodeModulesArg === undefined
-		? join(resolveProfile(profileArg), "node_modules")
-		: resolve(expandHome(nodeModulesArg));
+	nodeModulesArg !== undefined
+		? resolve(expandHome(nodeModulesArg))
+		: profileArg !== undefined
+			? join(resolveProfile(profileArg), "node_modules")
+			: (detected ?? join(resolveProfile(undefined), "node_modules"));
+const hostTreeFound = nodeModulesArg !== undefined || profileArg !== undefined || detected !== null;
 
 let manifest;
 try {
@@ -77,7 +83,12 @@ try {
 
 const issues = [];
 const rows = [];
+if (!hostTreeFound) {
+	// 探测不到宿主树：明确说是「没找到树」，而不是「找不到目标包」（后者会误导人重打补丁）。
+	process.stderr.write("[dsh-compat] 未找到宿主 node_modules（L2 不适用或环境特殊）；可用 DSH_COMPAT_NM 显式指定。\n");
+}
 for (const target of manifest.targets) {
+	if (!hostTreeFound) break;
 	const info = inspect(target, nodeModules);
 	rows.push({ id: target.id, pkg: target.pkg, rel: target.rel, state: info.state, why: info.why });
 	if (info.state === "patched" || info.state === "retired") continue;

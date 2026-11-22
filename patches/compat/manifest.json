@@ -1,14 +1,15 @@
 {
 	"schema": 1,
 	"generated": "2026-11-07",
-	"note": "L2 加载器隔离补丁清单。Termux 生产目标是全局树 $(npm root -g)/dsh-termux/node_modules（用 --node-modules 指定）；profile 树副本若存在也可用 --profile。pristine/patched 哈希任一不匹配即视为漂移，脚本拒绝半套应用。",
+	"note": "L2 加载器隔离补丁清单。目标 node_modules 由 lib/l2.mjs 自动探测（DSH_INSTALL_DIR / 进程入口 / PREFIX / 标准 npm -g 根 / 自身位置），也可用 --node-modules 或 --profile 显式指定。pristine/patched/retired 哈希任一命中即按对应态处理；都不匹配即漂移，脚本拒绝半套应用。",
 	"base": {
 		"upstream": "0.2.2-rc.3",
 		"verified_against": [
 			"0.2.2-rc.1",
-			"0.2.2-rc.3"
+			"0.2.2-rc.3",
+			"0.2.2-rc.5"
 		],
-		"note": "补丁字节的 pristine/patched 锚点仍是 0.2.2-rc.1（sha256 74e834b8…，46569B），保留给旧宿主；0.2.2-rc.3 起上游已内建 start() 逐条目 catch 且 audit/B2 目标代码迁出该包，命中 targets[].retired.sha256 即视为「无需补丁」（退役），不判漂移。rc.5 旧锚点已退役：哈希不匹配即拒绝。"
+		"note": "补丁字节的 pristine/patched 锚点仍是 0.2.2-rc.1（sha256 74e834b8…，46569B），保留给旧宿主；0.2.2-rc.3 起上游已内建 start() 逐条目 catch 且 audit/B2 目标代码迁出该包，命中 targets[].retired.sha256 即视为「无需补丁」（退役），不判漂移。0.2.2-rc.5 的 dsh-client-modules 与 rc.3 字节相同（fc491b97…），同样走 retired。rc.5 之前 Termux 的旧锚点（426084f8…）已退役：哈希不匹配即拒绝。"
 	},
 	"targets": [
 		{
@@ -23,7 +24,11 @@
 			"retired": {
 				"upstream": "0.2.2-rc.3",
 				"sha256": "fc491b97b5d923446faf9ebff238dba6d1f8a55b03e8bf71bea90355ee33bec6",
-				"note": "0.2.2-rc.3 的 dsh-client-modules 已内建 start() 逐条目 catch，且 audit/B2 目标代码已迁出该包 ⇒ 无需补丁；哈希命中即视为已退役（不判漂移）。"
+				"note": "0.2.2-rc.3 起 dsh-client-modules 已内建 start() 逐条目 catch，且 audit/B2 目标代码已迁出该包 ⇒ 无需补丁；0.2.2-rc.5 字节相同（2026-11-22 实测），故一并登记。哈希命中即视为已退役（不判漂移）。",
+				"verified_against": [
+					"0.2.2-rc.3",
+					"0.2.2-rc.5"
+				]
 			},
 			"effect": "A：makeRequire 未命中返回毒化代理（[dsh-compat] 归因，使用即抛）。start() 的 Promise.all 改逐条目 catch。B2：await loader.await() 后、boot audit 前清理 fiber.state===FAILED 的条目——毒化代理把失败从 import 期推迟到激活期，create() 不抛，单靠 catch 捕不到，必须靠 B2 移除。0.2.2-rc.1 锚点复验：正向/反向 applyPatch 均与目标字节一致。"
 		}

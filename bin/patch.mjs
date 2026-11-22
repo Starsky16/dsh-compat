@@ -35,6 +35,8 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { candidateNodeModules } from "../lib/host-tree.mjs";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
 const DEFAULT_MANIFEST = join(ROOT, "patches", "compat", "manifest.json");
@@ -288,10 +290,14 @@ function main() {
 	} catch (error) {
 		fail(`读不了补丁清单 ${manifestPath}：${error.message}`);
 	}
+	// 显式参数优先：--node-modules > --profile > 自动探测宿主树。
+	// 都不给时才探测（DSHBox / Termux / npm 全局 / 源码跑都适用）；探测不到退回 profile 树。
 	const nodeModules =
-		nodeModulesArg === undefined
-			? join(resolveProfile(profileArg), "node_modules")
-			: resolve(expandHome(nodeModulesArg));
+		nodeModulesArg !== undefined
+			? resolve(expandHome(nodeModulesArg))
+			: profileArg !== undefined
+				? join(resolveProfile(profileArg), "node_modules")
+				: (candidateNodeModules() ?? join(resolveProfile(undefined), "node_modules"));
 	const rows = [];
 	let drifted = 0;
 	let todo = 0;
