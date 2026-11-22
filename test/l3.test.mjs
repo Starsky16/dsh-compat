@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { readManifest, sha256 } from "../bin/patch.mjs";
-import { apply, defaultNodeModules, l2Selfcheck, nodeModuleCandidateRoots } from "../lib/index.js";
+import { apply, buildCompatStatus, candidateNodeModules, candidateNodeModulesList, defaultNodeModules, l2Selfcheck } from "../lib/index.js";
 import { POLYFILLS } from "../lib/polyfills.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -31,51 +31,39 @@ test("POLYFILLS 只补缺失：randomUUID 与 AbortSignal.any 都有守卫", () 
 	assert.ok(!POLYFILLS.includes("dshCompatMenu"), "菜单不透明是锁定行为，脚本不再落切换属性");
 });
 
-test("nodeModuleCandidateRoots：候选根按平台一般化（win 不探测 / PREFIX 优先 / 标准 npm -g 根）", () => {
+test("candidateNodeModulesList：候选根按信号排序（win 不探测 / 显式 env 优先 / PREFIX 与标准根兜底）", () => {
 	// WIN 桌面端 dsh 核心在 app.asar 内不可写，L2 不适用 → 不探测
-	assert.deepEqual(nodeModuleCandidateRoots({}, "win32"), []);
-	// Termux：PREFIX 即 npm -g 根，零配置命中
-	assert.deepEqual(nodeModuleCandidateRoots({ PREFIX: "/x" }, "android"), ["/x/lib/node_modules"]);
-	// 标准 Linux/macOS：无 PREFIX 时补两个标准根
-	assert.deepEqual(nodeModuleCandidateRoots({}, "linux"), [
-		"/usr/local/lib/node_modules",
-		"/usr/lib/node_modules",
-	]);
-	// 有 PREFIX 的非 android（如自设 PREFIX 的容器）：PREFIX 在前，标准根兜底
-	assert.deepEqual(nodeModuleCandidateRoots({ PREFIX: "/x" }, "linux"), [
-		"/x/lib/node_modules",
-		"/usr/local/lib/node_modules",
-		"/usr/lib/node_modules",
-	]);
+	assert.deepEqual(candidateNodeModulesList({}, { argv: [], platform: "win32" }), []);
+	// Termux：PREFIX 即 npm -g 根，且 termux-dsh 布局的子树也在候选里
+	const termux = candidateNodeModulesList({ PREFIX: "/x" }, { argv: [], platform: "android" });
+	assert.equal(termux[0], "/x/lib/node_modules");
+	assert.ok(termux.includes("/x/lib/node_modules/dsh-termux/node_modules"));
+	// 标准 Linux/macOS：补两个标准根
+	const linux = candidateNodeModulesList({}, { argv: [], platform: "linux" });
+	assert.ok(linux.includes("/usr/local/lib/node_modules"));
+	assert.ok(linux.includes("/usr/lib/lib/node_modules") === false);
+	assert.ok(linux.includes("/usr/lib/node_modules"));
+	// 显式 DSH_COMPAT_NM 永远排第一
+	const explicit = candidateNodeModulesList({ DSH_COMPAT_NM: "/data/local/tmp/nm" }, { argv: [], platform: "linux" });
+	assert.equal(explicit[0], "/data/local/tmp/nm");
 });
 
-test("defaultNodeModules：显式 env 优先；合成 PREFIX 树命中；无任何 dsh 树时静默 null", () => {
-	// DSH_COMPAT_NM 显式指定永远优先
-	assert.equal(defaultNodeModules({ DSH_COMPAT_NM: "/data/local/tmp/nm" }), "/data/local/tmp/nm");
-	// 禁用开关压过一切
-	assert.equal(
-		defaultNodeModules({ DSH_COMPAT_DISABLE_L2_SELFCHECK: "1", PREFIX: "/data/data/com.termux/files/usr" }),
-		null,
-	);
-
-	// 合成 PREFIX 树：候选根下存在 dsh-termux/node_modules 就命中（任何平台）
+test("candidateNodeModules：显式 env 优先；合成树命中；无目标包时静默 null", () => {
+	// DSH_COMPAT_NM 显式指定永远优先（但要求该树下真有目标包）
 	const fake = mkdtempSync(join(tmpdir(), "dsh-compat-nm-"));
 	try {
 		const fakeNm = join(fake, "lib", "node_modules", "dsh-termux", "node_modules");
-		mkdirSync(fakeNm, { recursive: true });
-		assert.equal(defaultNodeModules({ PREFIX: fake }), fakeNm);
+		mkdirSync(join(fakeNm, "@deepseek-ai", "dsh-client-modules", "lib"), { recursive: true });
+		assert.equal(candidateNodeModules({ PREFIX: fake }, { argv: [], platform: "linux" }), fakeNm);
+		assert.equal(candidateNodeModules({ DSH_COMPAT_NM: fakeNm }, { argv: [], platform: "linux" }), fakeNm);
 	} finally {
 		rmSync(fake, { recursive: true, force: true });
 	}
-
-	// 本机实况：android 无 PREFIX → 无候选根 → null（不猜）
-	if (process.platform === "android") {
-		assert.equal(defaultNodeModules({}), null);
-		assert.equal(
-			defaultNodeModules({ PREFIX: "/data/data/com.termux/files/usr" }),
-			"/data/data/com.termux/files/usr/lib/node_modules/dsh-termux/node_modules",
-		);
-	}
+	// 禁用开关压过一切
+	assert.equal(
+		candidateNodeModules({ DSH_COMPAT_DISABLE_L2_SELFCHECK: "1", PREFIX: "/data/data/com.termux/files/usr" }),
+		null,
+	);
 });
 
 test("apply 接线：脚本 prepend、样式不 prepend，行形态符合 rc.5 契约", () => {
@@ -91,10 +79,11 @@ test("apply 接线：脚本 prepend、样式不 prepend，行形态符合 rc.5 �
 
 	assert.deepEqual(
 		calls.map((c) => c.event),
-		["webserver/index-inject", "webserver/index-inject"],
+		["webserver/index-inject", "webserver/index-inject", "webserver/index-inject"],
 	);
 	assert.equal(calls[0].prepend, true, "polyfill 脚本要抢在主题脚本之前");
 	assert.equal(calls[1].prepend, false, "样式要落在 boot style 之后（后写覆盖）");
+	assert.equal(calls[2].prepend, false, "状态脚本按普通顺序追加即可");
 
 	// 脚本行：kind=script + placement=body（rc.5 里 script 必须带 placement）
 	const scriptTable = [];
@@ -103,6 +92,14 @@ test("apply 接线：脚本 prepend、样式不 prepend，行形态符合 rc.5 �
 	assert.equal(scriptTable[0].kind, "script");
 	assert.equal(scriptTable[0].placement, "body");
 	assert.equal(scriptTable[0].text, POLYFILLS);
+
+	// 状态脚本：第三条监听，只追加一行 script
+	const statusTable = [];
+	handlers[2](statusTable);
+	assert.equal(statusTable.length, 1);
+	assert.equal(statusTable[0].kind, "script");
+	assert.equal(statusTable[0].placement, "body");
+	assert.match(statusTable[0].text, /__DSH_COMPAT_STATUS__/);
 
 	// 样式行：kind=style 且不带 placement（rc.5 的 style 形态没有该字段）
 	const styleTable = [];
@@ -139,19 +136,23 @@ test("perf.css 每条规则都限定在 perf 开关属性下", () => {
 	}
 });
 
-test("包保持纯 host：不声明 dsh.client / 不给 exports[\"./client\"]（菜单不透明锁定，无设置项）", () => {
+test("client 半区声明成对：dsh.client 与 exports[\"./client\"] 必须同时存在", () => {
 	const pkg = JSON.parse(text(join(ROOT, "package.json")));
 	assert.equal(pkg.main, "lib/index.js");
 	// bundle 层声明是必需的（否则 dsh plugin add 只当普通依赖、不进 loader）
 	assert.equal(pkg.dsh?.bundle?.patch, "./cordis.patch.yml");
-	// 声明了 dsh.client 却没有 ./client 导出 = 宿主服务端组合期抛错；本包两者都没有
-	assert.ok(pkg.dsh?.client === undefined, "不得声明 dsh.client");
-	assert.ok(pkg.exports?.["./client"] === undefined, "不得有 exports[\"./client\"]");
-	assert.ok(!existsSync(join(ROOT, "lib", "client.js")), "client 半区文件应已移除");
+	assert.equal(pkg.dsh?.client?.platform, "web");
+	assert.equal(pkg.exports?.["./client"]?.default, "./lib/client.js");
+	assert.ok(existsSync(join(ROOT, "lib", "client.js")), "client 半区文件必须存在");
 	// bundle patch 文件存在且是 - insert: 行（挂载 host 半区）
 	const patchText = text(join(ROOT, pkg.dsh.bundle.patch.replace(/^\.\//, "")));
 	assert.match(patchText, /- insert:/);
 	assert.match(patchText, /id: dsh-compat/);
+});
+
+test("package：engines.dsh 声明 >=0.2.1-rc.3（不设上界）", () => {
+	const pkg = JSON.parse(text(join(ROOT, "package.json")));
+	assert.equal(pkg.engines?.dsh, ">=0.2.1-rc.3");
 });
 
 test("l2Selfcheck：缺失 / pristine / patched / retired 四态（合成夹具）", () => {
@@ -205,3 +206,26 @@ test("l2Selfcheck：缺失 / pristine / patched / retired 四态（合成夹具�
 	}
 });
 
+
+test("apply：注入 __DSH_COMPAT_STATUS__（含 L2 与插件结论）且转义 </script>", () => {
+	const handlers = [];
+	const ctx = { on(event, fn) { handlers.push(fn); } };
+	apply(ctx);
+	const table = [];
+	for (const handler of handlers) handler(table);
+	const script = table.find((row) => row.kind === "script" && row.text.includes("__DSH_COMPAT_STATUS__"));
+	assert.ok(script, "必须注入状态全局");
+	assert.ok(!script.text.includes("</script>"), "注入内容不得提前闭合 script");
+	assert.equal(script.placement, "body");
+});
+
+test("buildCompatStatus：结构含 host/l2/plugins，且 JSON 可序列化", () => {
+	const status = buildCompatStatus();
+	assert.equal(typeof status.host.version === "string" || status.host.version === null, true);
+	assert.ok(["retired", "patched", "pristine", "drift", "skip"].includes(status.l2.state));
+	assert.ok(Array.isArray(status.plugins));
+	for (const row of status.plugins) {
+		assert.equal(typeof row.name, "string");
+		assert.equal(typeof row.verdict, "string");
+	}
+});
