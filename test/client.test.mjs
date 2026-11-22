@@ -40,7 +40,7 @@ test("client bundle：id 正确，导出 apply 与 inject", () => {
 	assert.deepEqual(Array.from(mod.inject), ["slots"]);
 });
 
-test("client apply：注册 plugins.tab 与 plugins.detail.badge", () => {
+test("client apply：注册 plugins.tab、plugins.detail.badge 与 plugins.detail.section", () => {
 	const { mod } = loadClient();
 	const registered = [];
 	const ctx = {
@@ -52,7 +52,7 @@ test("client apply：注册 plugins.tab 与 plugins.detail.badge", () => {
 	};
 	mod.apply(ctx);
 	const names = registered.map((r) => r.options.name).sort();
-	assert.deepEqual(names, ["plugins.detail.badge", "plugins.tab"]);
+	assert.deepEqual(names, ["plugins.detail.badge", "plugins.detail.section", "plugins.tab"]);
 });
 
 test("CompatBadge：非 bundle subject 返回 null，FAIL 行渲染文本", () => {
@@ -110,4 +110,57 @@ test("client bundle 不直接读 document 之外的宿主 API，且不含 </scri
 	const source = readFileSync(join(ROOT, "lib", "client.js"), "utf8");
 	assert.ok(!source.includes("</script"));
 	assert.ok(!source.includes("require(\"fs\")"), "client 半区不得引用 node 内置模块");
+});
+
+test("详情页段落：order 10 排在市场「来源仓库」（order 90）之前", () => {
+	const { mod } = loadClient({ plugins: [] });
+	const registered = [];
+	mod.apply({ effect: (fn) => fn(), slots: { inject: (_n, cb) => cb(), register: (o, C) => registered.push({ o, C }) } });
+	const entry = registered.find((r) => r.o.name === "plugins.detail.section");
+	assert.ok(entry, "应注册详情页段落");
+	assert.equal(entry.o.order, 10);
+	assert.equal(entry.o.id, "dsh-compat");
+});
+
+test("详情页段落：展开 FAIL 插件的 missing 与 notes（不只是角标）", () => {
+	const { mod } = loadClient({
+		host: { version: "0.2.2-rc.5" },
+		l2: { state: "retired", anchor: "0.2.2-rc.3", retired: true },
+		plugins: [
+			{ name: "bad-plugin", verdict: "FAIL", missing: ["@scope/missing/client"], notes: ["依赖不可达（externals 漂移）"] },
+		],
+	});
+	const registered = [];
+	mod.apply({ effect: (fn) => fn(), slots: { inject: (_n, cb) => cb(), register: (o, C) => registered.push({ o, C }) } });
+	const Section = registered.find((r) => r.o.name === "plugins.detail.section").C;
+	const text = flat(Section({ subject: { kind: "bundle", pkg: { name: "bad-plugin" } } }));
+	assert.match(text, /不可用/);
+	assert.match(text, /@scope\/missing\/client/, "详情页必须摊开缺失的 specifier");
+	assert.match(text, /externals 漂移/, "详情页必须摊开原因");
+});
+
+test("详情页段落：PASS 插件给出明确「兼容」结论（不是空白）", () => {
+	const { mod } = loadClient({ plugins: [{ name: "ok", verdict: "PASS", missing: [], notes: [] }] });
+	const registered = [];
+	mod.apply({ effect: (fn) => fn(), slots: { inject: (_n, cb) => cb(), register: (o, C) => registered.push({ o, C }) } });
+	const Section = registered.find((r) => r.o.name === "plugins.detail.section").C;
+	const text = flat(Section({ subject: { kind: "bundle", pkg: { name: "ok" } } }));
+	assert.match(text, /兼容/);
+});
+
+test("详情页段落：非 bundle subject（row 等）返回 null，不抢别家段落", () => {
+	const { mod } = loadClient({ plugins: [{ name: "x", verdict: "FAIL", missing: [], notes: [] }] });
+	const registered = [];
+	mod.apply({ effect: (fn) => fn(), slots: { inject: (_n, cb) => cb(), register: (o, C) => registered.push({ o, C }) } });
+	const Section = registered.find((r) => r.o.name === "plugins.detail.section").C;
+	assert.equal(Section({ subject: { kind: "row", pkg: { name: "x" } } }), null);
+	assert.equal(Section({}), null);
+});
+
+test("详情页段落：未登记插件返回 null（不制造噪音）", () => {
+	const { mod } = loadClient({ plugins: [] });
+	const registered = [];
+	mod.apply({ effect: (fn) => fn(), slots: { inject: (_n, cb) => cb(), register: (o, C) => registered.push({ o, C }) } });
+	const Section = registered.find((r) => r.o.name === "plugins.detail.section").C;
+	assert.equal(Section({ subject: { kind: "bundle", pkg: { name: "unknown" } } }), null);
 });
