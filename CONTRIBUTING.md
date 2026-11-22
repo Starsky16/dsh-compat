@@ -28,7 +28,12 @@
 ### 命令
 
 ```bash
-# Termux（生产）：打全局树——profile 里不物化 @deepseek-ai/*
+# 一般情况：让工具自己找宿主树（DSHBox / 源码跑 / npm 全局装 / Termux 都适用）
+node bin/patch.mjs --check
+node bin/patch.mjs --apply
+node bin/patch.mjs --revert
+
+# 也可显式指定（Termux 时代的全局树写法；profile 里不物化 @deepseek-ai/*）
 NM="$(npm root -g)/dsh-termux/node_modules"
 node bin/patch.mjs --check  --node-modules "$NM"
 node bin/patch.mjs --apply  --node-modules "$NM"
@@ -47,9 +52,11 @@ node bin/patch.mjs --apply --node-modules "$NM" --allow-drift --force
 ### 机制要点
 
 - 目标：`<node-modules>/@deepseek-ai/dsh-client-modules/lib/client.js`。`--node-modules` 直接给根；`--profile` 等价于 `<profile>/node_modules`，两者同给时以 `--node-modules` 为准。
-- Termux 实测：全新 profile 的 `node_modules/@deepseek-ai` 为空，宿主直走全局树；所以生产打全局树。代价是 **升级 dsh 后补丁被覆盖**，由 `bin/selfcheck.mjs` 只告警兜底（不自动重打、不拒绝启动）；termux-dsh 的 deb postinst 会 best-effort 重打（tdsh.5 起）。
+- **宿主树自动探测**（`lib/l2.mjs` 的 `candidateNodeModules`，2026-11-22 重写）：按 `DSH_COMPAT_NM` → `DSH_INSTALL_DIR` → 进程入口脚本（`argv[1]`）→ `$PREFIX/lib/node_modules`（含 `dsh-termux/node_modules`）/ `/usr/local/lib/node_modules` / `/usr/lib/node_modules` → 本包自身位置 逐级尝试，**命中判据是该目录下真有 `@deepseek-ai/dsh-client-modules`**（不靠目录长得像）。这样 DSHBox 的 `/opt/dshapp/runtime/node_modules`、源码跑、npm 全局装、Termux 的 `dsh-termux/node_modules` 都能自动命中；WIN 桌面端不探测（`app.asar` 不可写）。
+  - 旧实现只认 `dsh-termux/node_modules` 一种布局，在非 Termux 环境会静默 `skip`，导致 L2 自检与 doctor 全部失效（2026-11-22 在 DSHBox 上实测到的假阴性根因）。
+- 代价是 **升级 dsh 后补丁被覆盖**，由 `bin/selfcheck.mjs` 只告警兜底（不自动重打、不拒绝启动）；termux-dsh 的 deb postinst 会 best-effort 重打（tdsh.5 起）。
 - `--allow-drift --force`：默认对 `pristine_sha256` / `patched_sha256` 硬拒绝；两参数同给时，只有 hunk 锚点仍能匹配才强打，跳过 patched 哈希校验，`--revert` 从 `.orig` 原样恢复。**只在确认上游只是小改、且事后会验页面时用。**
-- 清单：`patches/compat/manifest.json` 锁 `pristine_sha256` / `patched_sha256`；当前锚定 **0.2.2-rc.1**（pristine `74e834b8…`，patched `37be3ba1…`）。0.2.2 改写了 `makeRequire`（新增 seed 分支），rc.3/rc.5 的旧锚点（`426084f8…`）已退役，其他版本哈希不匹配即拒绝。
+- 清单：`patches/compat/manifest.json` 锁 `pristine_sha256` / `patched_sha256` / `retired.sha256` 三档。补丁字节锚定 **0.2.2-rc.1**（pristine `74e834b8…`，patched `37be3ba1…`）；**0.2.2-rc.3 起上游已内建 `start()` 逐条目 catch，且 audit/B2 目标代码迁出该包 ⇒ 登记为 `retired`**（rc.3 与 rc.5 的 `client.js` 字节相同，`fc491b97…`），命中即「无需补丁」，不判漂移。其他版本哈希不匹配即拒绝。
 - 补丁内容（A + 隔离 + B2）：
   - `makeRequire` 未命中返回**毒化代理**（使用即抛，带 `[dsh-compat]` 与缺失 spec 的归因），不再击穿整个 `start()`；
   - `start()` 的 `Promise.all` 改**逐条目 catch**，import 期失败就地移除并 `console.error`；
@@ -64,10 +71,11 @@ node bin/patch.mjs --apply --node-modules "$NM" --allow-drift --force
 |---|---|
 | `DSH_COMPAT_NM` | 显式指定 L2 补丁目标 node_modules 根（优先于自动探测） |
 | `DSH_COMPAT_DISABLE_L2_SELFCHECK=1` | 关闭 L3 激活时的自检告警 |
+| `DSH_GLOBAL_TREE` | doctor 判定 client 半区可达性时额外纳入的宿主树（排最前） |
 
-自动探测顺序（`lib/index.js` 的 `nodeModuleCandidateRoots`）：`$PREFIX/lib/node_modules`（Termux 与自设 PREFIX 的环境）→ `/usr/local/lib/node_modules` → `/usr/lib/node_modules`，任一处存在 `dsh-termux/node_modules` 即命中；都不存在则静默跳过、不影响 L3/L4。
+自动探测顺序（`lib/l2.mjs` 的 `candidateNodeModules`）：`DSH_COMPAT_NM` → `DSH_INSTALL_DIR`（宿主安装目录，含 DSHBox）→ 进程入口 `argv[1]` 向上 → `$PREFIX/lib/node_modules`（及其 `dsh-termux/node_modules`）/ `/usr/local/lib/node_modules` / `/usr/lib/node_modules` → 本包自身位置。命中判据是**该目录下真有 `@deepseek-ai/dsh-client-modules`**；都不命中才静默跳过，不影响 L3/L4。
 
-## L3 客户端垫片（纯 host 注入）
+## L3 客户端垫片（host + client 半区）
 
 组成（plans Task 3，按 2026-11-01 真机结论修订；2026-11-07 定稿：菜单锁定不透明，不做设置项）：
 
@@ -75,6 +83,10 @@ node bin/patch.mjs --apply --node-modules "$NM" --allow-drift --force
 - **`css/opaque.css`** → `kind: "style"` 不带 placement、不 prepend，对 `body` / `body[data-ds-dark-theme]` 用 `!important` 把菜单材质 token 锁死为不透明，并把 `--dsw-menu-backdrop-filter` 设为 none。必须 `!important`：宿主主题运行时 append（顺序在后），且 darwin 上还有更高特异性的 `html[data-platform=darwin] body` 覆盖；只靠特异性在 darwin 会被压回半透明。2026-11-07 复核：宿主 ui-theme 的 design-platform.css 在 `body` 定义这些 token，值是有意做成毛玻璃的带 alpha 色（rc.5 `#f8f9fa94` / `#43454a73`，0.2.2-rc.1 `#fcfdfeb3` / `#303136a3`，配 `blur(40px) saturate(150%)`）。⛔ 不要再写 `:root`（body 自己的声明永远压过继承值）。
 - **`css/perf.css`** → opt-in：只在 `[data-dsh-compat-perf="1"]` 下生效（触屏才打开），关 backdrop-filter、动画时长归零。
 - **L2 激活自检（T7 方案 C）**：插件 `apply()` 时按 manifest sha256 校验全局树补丁，未打/漂移只 stderr 告警（判据与 `bin/selfcheck.mjs` 一致）。
+- **`lib/client.js`（client 半区）**：只读宿主注入的 `window.__DSH_COMPAT_STATUS__`，注册 `plugins.tab`（插件管理页「兼容性」）与 `plugins.detail.badge`（详情页角标，仅非 PASS 显示）。状态由 host 半区在 `webserver/index-inject` 里注入（`buildCompatStatus()`，见下节）。
+  - 数据形状：`{ host: { version }, l2: { anchor, state, why, retired, sha256, file }, plugins: [{ name, verdict, missing, notes }], generatedAt, error? }`。
+  - 注入用 `escapeForScript()` 转义 `<` 与 U+2028/2029，避免提前闭合 `<script>`。
+  - ⚠️ `dsh.client` 与 `exports["./client"]` **必须成对**；只声明前者会在宿主服务端组合期抛 `ClientPackageCompositionError`。
 
 注入顺序契约（rc.5 实证）：boot style → L3 两段 style → `<body>` 起始处 polyfill。`script` 行必须带 `placement`（`'head'|'body'`），`style` 行不带（永远进 head 桶）；渲染分桶（head/body 各自保序）是宿主固有行为。注意宿主主题（ui-theme 的 design-platform.css 等）是客户端运行时 `document.head.appendChild` 注入的，**晚于** L3 两段 style ⇒ L3 样式只能做兜底，覆盖不了主题；要覆盖必须提高特异性或加 `!important`（会牺牲宿主设计，慎用）。
 
@@ -83,10 +95,13 @@ node bin/patch.mjs --apply --node-modules "$NM" --allow-drift --force
 ## doctor（L4）
 
 ```bash
-node bin/doctor.mjs [profile目录] [--fix] [--dry-run]
+node bin/doctor.mjs [profile目录] [--fix] [--dry-run] [--json]
 ```
 
-- 缺省 profile：`$DSH_HOME/profiles/web`，再退回 `…/profiles/desktop`（WIN 惯例）。
+检查逻辑在 `lib/doctor-core.mjs`（`createDoctor().audit()`，纯函数，host 半区与 CLI 共用）；`bin/doctor.mjs` 只是薄 CLI（参数、打印、`--fix`、`--json`、退出码）。
+
+- 缺省 profile：`DSH_PROFILE_DIR` → `DSH_PROFILE` → `$DSH_HOME/profiles/web` → `…/profiles/desktop`（WIN 惯例）。自定义 profile 名（如临时验证用的 `compatverify`）靠前两个变量命中。
+- 输出首行是 L2 段（`L2 retired（锚定 0.2.2-rc.3）`），**不参与退出码**；`--json` 会给出 `{ profile, generatedAt, l2, plugins, summary }`。
 - `--fix`：对 FAIL 项执行 `dsh plugin --profile <名> remove <包>`；WIN 上自动使用 CLI 载体 `resources\runtime\cli\bin\dsh.cmd`，找不到 CLI 时打印手动命令。
 - `--dry-run`：只打印将执行的回滚命令。
 - 退出码：`0` 全过；`1` 有 FAIL；`2` 用法/环境错误。
@@ -96,7 +111,7 @@ node bin/doctor.mjs [profile目录] [--fix] [--dry-run]
 1. `dsh.client.platform` 必须为 `"web"` 才会被宿主装配 client 半区；其他值给出 WARN（预期不加载，不拦）。
 2. client 入口 = `pkg.exports["./client"]`（字符串或 `{default}`）；声明了 `dsh.client` 却缺该导出会在**宿主服务端组合期抛错**，doctor 直接 FAIL。
 3. `os`/`cpu` 声明与当前平台交叉；Android 上 `process.platform === "android"` 按 `linux` 宽容映射。
-4. client bundle 里的裸 specifier 只能命中：前端 staticModules seed 词 / 某个 `platform==="web"` 包的 client 半区（profile 树、Termux 全局树、WIN `app.asar` 模块表）。全部落空即「externals 漂移」，判 FAIL。扫描前先剥 `//` 与 `/* */` 注释（`lib/specscan.mjs`，字符级扫描并保留字符串/模板/正则字面量）：JSDoc 里 `from "nothing"` 这类散文不再被当成 specifier（2026-11-07 修复）。
+4. client bundle 里的裸 specifier 只能命中：前端 staticModules seed 词 / 某个 `platform==="web"` 包的 client 半区（profile 树、自动探测到的宿主树、`DSH_GLOBAL_TREE`、WIN `app.asar` 模块表）。全部落空即「externals 漂移」，判 FAIL。扫描前先剥 `//` 与 `/* */` 注释（`lib/specscan.mjs`，字符级扫描并保留字符串/模板/正则字面量）：JSDoc 里 `from "nothing"` 这类散文不再被当成 specifier（2026-11-07 修复）。
 5. 已知例外走 `compat/known.json`（如 try/catch 包裹的旧版回退 require），显示为 `KNOWN` 并附归因。
 
 ### 测试 fixtures

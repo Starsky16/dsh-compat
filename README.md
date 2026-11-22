@@ -1,8 +1,8 @@
 # dsh-compat
 
-让 DeepSeek Harness（dsh）的插件在 **Termux / Linux** 上「装得上、崩了不连坐、坏了看得见」的兼容层。
+让 DeepSeek Harness（dsh）的插件在 **Linux（含 Termux / 手机端容器）** 上「装得上、崩了不连坐、坏了看得见」的兼容层。
 
-一个插件加载失败时，dsh 默认会**整页白屏**（应用完全起不来）；移动端弹层还可能整体透明。dsh-compat 解决这两个问题，外加一个装插件前的体检工具。
+一个插件加载失败时，dsh 默认会**整页白屏**（应用完全起不来）；移动端弹层还可能整体透明。dsh-compat 解决这两个问题，外加一个装插件前的体检工具与插件页的「兼容性」视图。
 
 ## 它解决什么问题
 
@@ -12,10 +12,13 @@
 | 弹出菜单/下拉是透明或半透明的，看不清 | **L3 客户端垫片** | 菜单/弹层改为不透明实色（自动适配深浅色），模糊一并关闭 |
 | 手机上 UI 动画卡顿 | **L3 客户端垫片** | 触屏设备自动关闭高开销的模糊与动画 |
 | 不知道一个插件能不能装 | **L4 doctor 体检** | 装前检查平台声明与依赖，装不了会告诉你为什么 |
+| 想知道当前装的插件到底能不能加载 | **插件页「兼容性」tab** | 插件管理页直接列出每个插件的判定与原因，详情页还有角标 |
 
 ## 安装
 
-**环境要求**：dsh（官方版或 [termux-dsh](https://github.com/Starsky16/termux-dsh)）；Node ≥ 24.2。
+**环境要求**：dsh ≥ 0.2.1-rc.3（官方版即可；[termux-dsh](https://github.com/Starsky16/termux-dsh) 已归档，2026-11-21）；Node ≥ 24.2。
+
+**从插件市场安装**：在 dsh 的插件市场搜索 `dsh-compat`（已收录），或按下面任一方式装。
 
 三种方式任选其一（装完即生效，无需手工改配置）：
 
@@ -42,7 +45,8 @@ node dsh-compat/bin/doctor.mjs        # 逐个报告 profile 里插件的体检�
 
 | 平台 | 隔离补丁（L2） | 垫片（L3） | 体检（L4） |
 |---|---|---|---|
-| **Termux**（[termux-dsh](https://github.com/Starsky16/termux-dsh)） | ✅ 全部 | ✅ | ✅ |
+| **Linux（DSHBox / 源码 / npm 全局装 dsh）** | ✅ 全部（宿主树自动探测） | ✅ | ✅ |
+| **Termux**（[termux-dsh](https://github.com/Starsky16/termux-dsh)，已归档） | ✅ 全部 | ✅ | ✅ |
 | **Linux / macOS 桌面** | 自动探测，没找到相关组件就静默跳过 | ✅ | ✅ |
 | **Windows 桌面** | ❌ 不支持（官方 dsh 的核心文件打包在 app.asar 内，不可修改） | ✅ | ✅ |
 
@@ -51,6 +55,8 @@ node dsh-compat/bin/doctor.mjs        # 逐个报告 profile 里插件的体检�
 ## 常见问题
 
 **装完没有效果？** 重启 dsh（插件在启动时注入）。Termux 用户确认用的是 termux-dsh 的 dsh。
+
+**「兼容性」tab 显示不可用怎么办？** 那是 doctor 的静态判定：按行里给出的缺失项处理（多半是该插件依赖的 client 半区在当前 dsh 版本里不存在，等插件作者适配或换版本）。命令行的等价用法：`node bin/doctor.mjs`。
 
 **「L2 补丁未就绪」警告是什么？** 你刚升级过 dsh，隔离补丁被覆盖了。警告不影响启动，按提示重打即可恢复隔离能力。
 
@@ -64,7 +70,7 @@ node dsh-compat/bin/doctor.mjs        # 逐个报告 profile 里插件的体检�
 
 更多文档：
 
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** —— 补丁机制原理、doctor 判据、环境变量开关、仓库结构、参与开发
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** —— 补丁机制原理、doctor 判据、兼容性 tab、环境变量开关、仓库结构、参与开发
 - [docs/compat.md](docs/compat.md) —— 各环境兼容性覆盖矩阵（已验证 / 未验证 / 不支持）
 - [docs/spike-loader-isolation.md](docs/spike-loader-isolation.md) —— 加载器机制勘察报告
 
