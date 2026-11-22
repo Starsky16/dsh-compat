@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { readManifest, sha256 } from "../bin/patch.mjs";
-import { apply, buildCompatStatus, candidateNodeModules, candidateNodeModulesList, defaultNodeModules, l2Selfcheck } from "../lib/index.js";
+import { apply, buildCompatStatus, candidateNodeModules, candidateNodeModulesList, clearCompatStatusCache, compatStatusScript, defaultNodeModules, l2Selfcheck } from "../lib/index.js";
 import { POLYFILLS } from "../lib/polyfills.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -228,4 +228,37 @@ test("buildCompatStatus：结构含 host/l2/plugins，且 JSON 可序列化", ()
 		assert.equal(typeof row.name, "string");
 		assert.equal(typeof row.verdict, "string");
 	}
+});
+
+test("compatStatusScript：缓存结果，不每次页面请求都重跑 doctor", () => {
+	clearCompatStatusCache();
+	let calls = 0;
+	const fakeDoctor = () => {
+		calls++;
+		return { audit: () => [{ name: "p", verdict: "PASS", missing: [], notes: [] }] };
+	};
+	const t0 = Date.now();
+	const a = compatStatusScript({ nodeModules: "/x", createDoctor: fakeDoctor });
+	const b = compatStatusScript({ nodeModules: "/x", createDoctor: fakeDoctor });
+	assert.equal(calls, 1, "同一份输入应只计算一次");
+	assert.equal(a, b, "缓存命中应返回同一段文本");
+	assert.ok(Date.now() - t0 < 1000);
+});
+
+test("compatStatusScript：nodeModules 变化时缓存失效（换宿主树要重新算）", () => {
+	clearCompatStatusCache();
+	let calls = 0;
+	const fakeDoctor = () => ({ audit: () => { calls++; return []; } });
+	compatStatusScript({ nodeModules: "/a", createDoctor: fakeDoctor });
+	compatStatusScript({ nodeModules: "/b", createDoctor: fakeDoctor });
+	assert.equal(calls, 2, "不同宿主树必须分别计算");
+});
+
+test("compatStatusScript：可强制刷新（安装插件后想看最新结论）", () => {
+	clearCompatStatusCache();
+	let calls = 0;
+	const fakeDoctor = () => ({ audit: () => { calls++; return []; } });
+	compatStatusScript({ nodeModules: "/a", createDoctor: fakeDoctor });
+	compatStatusScript({ nodeModules: "/a", createDoctor: fakeDoctor, refresh: true });
+	assert.equal(calls, 2);
 });
