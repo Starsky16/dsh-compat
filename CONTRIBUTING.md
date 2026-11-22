@@ -62,7 +62,7 @@ node bin/patch.mjs --apply --node-modules "$NM" --allow-drift --force
   - `start()` 的 `Promise.all` 改**逐条目 catch**，import 期失败就地移除并 `console.error`；
   - **B2**：`await loader.await()` 之后、boot audit 之前，把 `fiber.state === FAILED` 且属于 `this.desired.plugins` 的条目 `loader.remove()`——毒化代理把失败从 import 期推迟到激活期，`create()` 不抛，单靠 catch 捕不到，必须靠 B2 清掉，否则 audit 仍整页崩。
 - 应用器由本仓 `bin/patch.mjs` 自己解析 unified diff，不依赖 `patch` / `git apply`（WIN 上 `git apply` 会按 `core.autocrlf` 把 LF 写成 CRLF）；写文件走临时文件 + rename，不写穿 pnpm 的硬链接。
-- 真机结论（2026-10-31 Termux rc.5）：pristine 整页崩 → L2 单独仍崩（`import failed: …` 变 `failed`）→ **L2 + B2 页面正常挂载**，插件页显示完整归因。三态对照见 `workflow-sync/handoff/archive/20261031-dsh-compat-L2补丁真机复验.md`。
+- 真机结论（2026-10-31 Termux rc.5）：pristine 整页崩 → L2 单独仍崩（`import failed: …` 变 `failed`）→ **L2 + B2 页面正常挂载**，插件页显示完整归因。三态实测过程见 `docs/spike-loader-isolation.md` §3「现行代码已有的隔离要素」末段。
 - 平台边界：**WIN 只上 L3+L4**——dsh 核心在 `app.asar` 内不可写。目标树已定：Termux 打全局树（全新 profile 不物化 `@deepseek-ai/*`，宿主直走全局树）。
 
 ### 环境变量开关（L3 激活自检）
@@ -160,6 +160,5 @@ dsh-compat/
 
 ## 相关
 
-- 计划：`workflow-sync` 仓 `plans/2026-10-27-dsh插件兼容层.md`
-- 跨仓事实：`docs/spike-loader-isolation.md`（冷启动整页失败链路、注入顺序、dshmarket 安装路径）
+- 设计背景与决策依据：加载器隔离的方案取舍记录在维护者的私有工作区，不随本仓公开；**本仓可执行的结论已全部落在 `docs/spike-loader-isolation.md`**（冷启动整页失败链路、三态验证、注入顺序、dshmarket 安装路径）——本仓文档自包含，不依赖任何外部私有仓。
 - 姊妹仓：[termux-dsh](https://github.com/Starsky16/termux-dsh)（L1 平台补丁、dsh 本体分发）

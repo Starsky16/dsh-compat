@@ -43,7 +43,7 @@
 **对 L2 的直接影响（送给 termux-dsh）**：变体 B（`materialize` catch 内降级导出）大概率不是最优解了——更小的补丁是**给 `start()` 的 `Promise.all` 换成逐条目 catch + 把失败条目标 managed-failed**，或给 `jZ`/`IZ` 的 audit 降级（把「未激活条目」从 throw 改成 warn）。**变体 A（毒化代理）仍保留**：`makeRequire` 未命中返回可归因代理，能让「缺依赖」的插件在 factory 内部就地炸成普通异常（随后被上面的隔离接住），而不是当场击穿整个 start。
 原 Task 2 的「变体 B + B2 跳过 degraded 条目」在真机上可以简化验证：先 A + start 逐条目 catch，跑 fixture 看页面是否照常挂载；audit throw 是否还拦（fixture 条目会以 fiber=undefined 出现在 audit 里）——**若 audit 仍 throw，则 B2 的落点从「跳过 degraded 包」改为「audit 容忍显式登记的降级条目」**。
 
-**2026-10-31 真机修正（Termux rc.5，三态对照）**：A 会让 `create()` 不抛（require 不再抛），失败被推迟到 fiber 激活期，`state = FAILED`；因此**只加 `start()` 的逐条目 catch 捕不到**，audit 仍 throw（文案从 `import failed: …` 变 `failed`，这本身就是代理已生效的证据）。正确落点是 **B2：在 `start()` 内 `await loader.await()` 之后、audit 之前，遍历 `loader.entries()` 把 `fiber.state === FAILED` 且属于 `this.desired.plugins` 的条目 `loader.remove()`**——不动前端 audit，改动面更小。三态实测（pristine 整页崩 / L2 单独仍崩 / L2+B2 正常挂载且插件页显示归因）见 `workflow-sync/handoff/archive/20261031-dsh-compat-L2补丁真机复验.md`。
+**2026-10-31 真机修正（Termux rc.5，三态对照）**：A 会让 `create()` 不抛（require 不再抛），失败被推迟到 fiber 激活期，`state = FAILED`；因此**只加 `start()` 的逐条目 catch 捕不到**，audit 仍 throw（文案从 `import failed: …` 变 `failed`，这本身就是代理已生效的证据）。正确落点是 **B2：在 `start()` 内 `await loader.await()` 之后、audit 之前，遍历 `loader.entries()` 把 `fiber.state === FAILED` 且属于 `this.desired.plugins` 的条目 `loader.remove()`**——不动前端 audit，改动面更小。三态实测（pristine 整页崩 / L2 单独仍崩 / L2+B2 正常挂载且插件页显示归因）的复现方式见 §8「动态半场」与 `test/patch.test.mjs` 的端到端用例。
 
 ## 4. dshmarket 装插件走不走 `dsh plugin` CLI（决定 Task 7 形态）
 
@@ -94,8 +94,7 @@
 
 ## 8. 动态半场（2026-10-31 Termux 真机完成）
 
-真机环境：`dsh 0.2.1-rc.5-tdsh.3` / Node v24.22.1 / `process.platform = android`；完整过程与日志在
-`workflow-sync/handoff/archive/20261031-dsh-compat-Termux动态半场测试.md`。三条核心结论全部得到证据：
+真机环境：`dsh 0.2.1-rc.5-tdsh.3` / Node v24.22.1 / `process.platform = android`；完整过程与日志留在维护者的私有工作区（不随本仓公开），可复现的结论与证据全部记在下面。三条核心结论全部得到证据：
 
 1. **冷启动连坐成立**：坏插件 client 侧 `require` 未命中 → 页面只剩 `Failed to load plugins` + 插件名 + 错误详情，应用 UI 完全不挂载；错误发生在浏览器侧，服务端日志 `missed the module table` 计数 0（与 §2 预判一致）。
 2. **doctor 平台判据正确**：`dsh-os-linux` 在 Termux **PASS**（`process.platform==="android"` → linux 映射生效；WIN 上同项 FAIL），`dsh-os-mismatch`（darwin）FAIL，bad-plugin FAIL，good-plugin PASS，nomanifest WARN，exit=1——逐项符合预期。
@@ -130,7 +129,7 @@
 
 ### 尚未覆盖
 
-- L2 补丁降级复验——**已完成**（2026-10-31 Termux rc.5，三态对照）：L2 单独不够，必须加 B2（`await loader.await()` 后、audit 前清 FAILED 条目）；补丁已含 B2，结论见 `workflow-sync/handoff/archive/20261031-dsh-compat-L2补丁真机复验.md`。仍待拍板：Termux 补丁目标树（profile 树未物化 `@deepseek-ai/*`，见交接）。
+- L2 补丁降级复验——**已完成**（2026-10-31 Termux rc.5，三态对照）：L2 单独不够，必须加 B2（`await loader.await()` 后、audit 前清 FAILED 条目）；补丁已含 B2，结论见本文 §3 与 §8。仍待拍板：Termux 补丁目标树（profile 树未物化 `@deepseek-ai/*`，目标树探测见 §8 与 `CONTRIBUTING.md` 的「宿主树自动探测」）。
 - Termux 真实 profile 目前为空集，doctor 与 WIN 10 插件结果的对齐待其装插件后重跑。
 - §4 的 dshmarket argv 形态复测（Termux 未装市场）。
 - 成功 boot 后覆盖层消失机制（§2 末注）。

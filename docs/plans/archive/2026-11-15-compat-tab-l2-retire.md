@@ -799,11 +799,11 @@ gh run watch "$RUN" --repo Starsky16/dsh-compat --exit-status
 
 ### Task 8: 交接回填与记忆
 
-**Files:** `workflow-sync/handoff/archive/20261114-dsh-compat-L2锚点适配dsh0.2.2-rc.3.md`、`workflow-sync/memory/repos/dsh-compat.md`、`dsh-compat.log.md`
+**Files:** 维护者私有工作区中的 `handoff/20261114-dsh-compat-L2锚点适配dsh0.2.2-rc.3.md` 与 `memory/repos/dsh-compat.md`（不随本仓公开）、本仓 `dsh-compat.log.md`
 
 - [x] **Step 1: handoff**：状态改 `已完结`，抬头下补 `> 结论：`；追加 `## 执行结果`（rc.3 退役决策、证据、`--check` 输出、发布日期）。
 - [x] **Step 2: 记忆**：结论文件更新（0.1.6、engines.dsh、兼容性 tab、L2 retired、doctor-core/`--json`）；日志追加 2026-11-15 条目。
-- [x] **Step 3: 同轮 commit + push**（workflow-sync 直连 URL，`ls-remote` 核对）。
+- [x] **Step 3: 同轮 commit + push**（维护者私有工作区仓，用直连 URL 提交后 `ls-remote` 核对远端已对齐）。
 
 ---
 
